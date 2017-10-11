@@ -4,6 +4,26 @@
 
 ;;; "utopian" goes here. Hacks and glory await!
 
+(defmacro with-prefixed-accessors (accessors prefix object &body body)
+  ;; TODO Should the interning be done in the current package, or in
+  ;; the package of the symbol being prefixed to, or in the package of
+  ;; the prefix? E.g. what if the symbol being prefixed to is from a
+  ;; different package?
+  (let ((accessors
+          (collecting
+            (flet ((save (slot accessor)
+                     (collect (list slot
+                                    (symbolicate prefix accessor)))))
+              (dolist (spec accessors)
+                (ematch spec
+                  ((list (and slot (type symbol))
+                         (and accessor (type symbol)))
+                   (save slot accessor))
+                  ((and sym (type symbol))
+                   (save sym sym))))))))
+    `(with-accessors ,accessors ,object
+       ,@body)))
+
 (deftype severity ()
   '(member :note :style-warning :warning))
 
@@ -113,27 +133,13 @@ without having to worry whether the package actually exists."
     (with-standard-io-syntax
       (read stream))))
 
-(defun load-system/report (system &rest args &key &allow-other-keys)
+(defun load-system (system &rest args &key &allow-other-keys)
   (with-warning-report (:system (string system))
     (apply #'asdf:load-system system args)))
 
-(defun quickload-system/report (system &rest args &key &allow-other-keys)
+(defun quickload (system &rest args &key &allow-other-keys)
   (with-warning-report (:system (string system))
     (apply #'ql:quickload (list system) :verbose t args)))
-
-(defclass report-formatter ()
-  ((report :initarg :report :type warning-report))
-  (:default-initargs
-   :report (required-argument :report)))
-
-(defclass text-formatter (report-formatter)
-  ())
-
-(defgeneric render-text (formatter report &optional stream))
-(defgeneric render-warning (formatter warning &optional stream))
-
-(defclass html-report (text-formatter)
-  ())
 
 (eval-always
   (defvar *ids* 0)
@@ -163,7 +169,8 @@ without having to worry whether the package actually exists."
            (:div.card-body
             ,@body))))))
 
-(defmethod render-text ((formatter html-report) (report warning-report) &optional (*html* *html*))
+(defun report-html (report &optional (*html* *html*))
+  (check-type report warning-report)
   (let* ((system (warning-report-system report))
          (warnings (warning-report-warnings report))
 
@@ -216,7 +223,7 @@ without having to worry whether the package actually exists."
                      :parent by-source-file-id
                      (:ul.list-group
                       (dolist (warning file-warnings)
-                        (render-warning formatter warning))))))))
+                        (render-warning warning))))))))
 
            (when by-severity
              (:h1 "By severity")
@@ -230,7 +237,7 @@ without having to worry whether the package actually exists."
                      :parent by-severity-id
                      (:ul.list-group
                       (dolist (warning warnings)
-                        (render-warning formatter warning)))))))))
+                        (render-warning warning)))))))))
 
           (:script :src "https://code.jquery.com/jquery-3.2.1.slim.min.js" :integrity "sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" :crossorigin "anonymous")
           (:script :src "https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" :integrity "sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" :crossorigin "anonymous")
@@ -264,10 +271,12 @@ without having to worry whether the package actually exists."
             file))
       file))
 
-(defmethod render-warning ((formatter html-report) (warning warning-info) &optional (*html* *html*))
-  (let* ((file (warning-info-source-file warning))
-         (type (warning-info-condition-type warning))
-         (string (warning-info-string warning)))
+(defun render-warning (warning &optional (*html* *html*))
+  (check-type warning warning-info)
+  (with-prefixed-accessors ((file   -source-file)
+                            (type   -condition-type)
+                            (string -string))
+      warning-info warning
     (with-html
       (:li.list-group-item
        :class (severity-class (warning-info-condition-severity warning))
@@ -283,9 +292,6 @@ without having to worry whether the package actually exists."
        (:a :href (if file (pathname-file-url file) "#")
          :title (and file (fmt "In ~a" (remove-homedir file)))
          (:pre (:code string)))))))
-
-(defun report-html (report &optional (stream *standard-output*))
-  (render-text (make 'html-report :report report) report stream))
 
 (defun report-html-file (report)
   (uiop:with-temporary-file (:stream s
