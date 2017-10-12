@@ -35,12 +35,12 @@
 
 (defgeneric condition-severity (condition)
   (:method ((c warning)) :warning)
-  (:method ((c style-warning)) :warning)
+  (:method ((c style-warning)) :style-warning)
   #+sbcl (:method ((c sb-ext:compiler-note)) :note))
 
 (defun sort-warnings (warnings)
   (~> warnings
-      (sort-new #'> :key #'warning-info-condition-severity-level)
+      (sort-new #'> :key #'warning-info-severity-level)
       (coerce 'list)))
 
 (defconstructor delayed-symbol
@@ -56,34 +56,45 @@ without having to worry whether the package actually exists."
 
 (defun delayed-symbol->symbol (ds)
   (let-match1 (delayed-symbol package name) ds
-    (intern name (find-package package))))
+    (or (find-symbol name (find-package package))
+        (error "No such symbol as ~a in ~a" name package))))
 
 (defstruct-read-only warning-info
   ;; We do not store the condition itself to ensure that instances can
   ;; be written and read.
-  (condition-type :type delayed-symbol)
-  (condition-severity :type severity)
+  (class :type delayed-symbol)
+  (severity :type severity)
   (string :type string)
   ;; TODO Do better.
   (source-file (or *compile-file-pathname* *load-truename*) :type (or null pathname)))
 
-(defmethod warning-info-condition-severity-level ((self warning-info))
-  (severity-level (warning-info-condition-severity self)))
+(defmethod warning-info-severity-level ((self warning-info))
+  (severity-level (warning-info-severity self)))
 
 (defstruct-read-only warning-report
   (system :type string)
-  (warnings :type list))
+  (warnings :type list)
+  (lisp-implementation-type
+   (lisp-implementation-type)
+   :type (or string null))
+  (lisp-implementation-version
+   (lisp-implementation-version)
+   :type (or string null)))
 
 (defclass warning-collector ()
   ((q :initform (queue) :type queue
       :reader warning-collector-q)))
 
+(deftype uninteresting-warning ()
+  `(or uiop:compile-warned-warning
+       ,@(filter #'symbolp uiop:*usual-uninteresting-conditions*)
+       (satisfies uiop-finds-uninteresting?)))
+
+(defun uiop-finds-uninteresting? (c)
+  (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*))
+
 (defun uninteresting? (c)
-  (or
-   (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*)
-   (typep c '(or uiop:compile-warned-warning
-              c2mop::defmethod-without-generic-function
-              asdf:bad-system-name))))
+  (typep c 'uninteresting-warning))
 
 (defgeneric collect-warning (self condition)
   (:method :around (self condition)
@@ -95,9 +106,9 @@ without having to worry whether the package actually exists."
   (:method collect-warning (self (warning condition))
     (let ((info
             (make-warning-info
-             :condition-type (symbol->delayed-symbol (type-of warning))
+             :class (symbol->delayed-symbol (type-of warning))
              :string (princ-to-string warning)
-             :condition-severity (condition-severity warning))))
+             :severity (condition-severity warning))))
       (enq info q)))
 
   (:method warning-collector-report (self system)
@@ -137,9 +148,13 @@ without having to worry whether the package actually exists."
   (with-warning-report (:system (string system))
     (apply #'asdf:load-system system args)))
 
-(defun quickload (system &rest args &key &allow-other-keys)
+(defun quickload (system)
+  (unless (find-package :quicklisp)
+    (error "Quicklisp is not installed in this Lisp."))
   (with-warning-report (:system (string system))
-    (apply #'ql:quickload (list system) :verbose t args)))
+    (uiop:symbol-call :ql :quickload
+                      (list system)
+                          :verbose t)))
 
 (eval-always
   (defvar *ids* 0)
@@ -147,55 +162,151 @@ without having to worry whether the package actually exists."
   (defun genid (string)
     (fmt "~a~a" string (finc *ids*))))
 
-(deftag accordion-card (body attrs &key title parent)
-  (with-unique-names (header-id body-id)
-    `(let ((,header-id (genid "heading"))
-           (,body-id (genid "collapse")))
-       (:div :class "card"
-         ,@attrs
-         (:div :class "card-header" :role "tab" :id ,header-id
-           (:h5
-             (:a :class "collapsed"
-               :data-toggle "collapse"
-               :href (fmt "#~a" ,body-id)
-               :aria-expanded "false"
-               :aria-controls ,body-id
-               ,title)))
-         (:div :id ,body-id
-           :class "collapse"
-           :role "tabpanel"
-           :aria-labelledby ,header-id
-           :data-parent (fmt "#~a" ,parent)
-           (:div.card-body
-            ,@body))))))
+(def html-report-css
+  (string+
+   (read-file-into-string
+    (asdf:system-relative-pathname :utopian #p"normalize.css"))
+   (let ((blue "#0074D9")               ;http://clrs.cc/
+         (red "#FF4136")
+         ;; (yellow "#FFDC00")
+         (orange "#FF851B")
+         ;; (black "#111111")
+         )
+     (lass:compile-and-write
+      '("*" :box-sizing "border-box")
+      '("body"
+        :margin "4em auto"
+        :max-width "65em"
+        :line-height "1.6"
+        :font-size "18px"
+        :color "222"
+        :padding 0
+        :font-family "sans-serif"
+        :font-feature-settings "tnum")
+      '("pre"
+        :line-height "1.2")
+      '("h1, h2, h3, h4, h5, h6"
+        :line-height "1.2")
+      '("ul"
+        :list-style-type "none"
+        :padding-left "0")
+      '("ul ul"
+        :padding-left "1em")
+      '(".warning"
+        :margin "1em auto")
+      '(".warning a"
+        :text-decoration "none"
+        :color "inherit")
+      '(".sc" :font-feature-settings "smcp")
+      '(".pathname" :font-family "mono")
+      `(".severity-warning figcaption" :color ,red)
+      `(".severity-style-warning figcaption" :color ,orange)
+      `(".severity-info figcaption" :color ,blue)))))
 
-(defun report-html (report &optional (*html* *html*))
+(defun ignore-types (warnings types)
+  (remove-if (lambda (w)
+               (let ((sym
+                       (delayed-symbol->symbol
+                        (warning-info-class w))))
+                 ;; TODO For development.
+                 (or (subtypep sym 'uninteresting-warning)
+                     (some (op (subtypep sym _))
+                           types))))
+             warnings))
+
+(defun system-base (system)
+  (asdf:system-relative-pathname system ""))
+
+(defun system-fasl-base (system)
+  (asdf:apply-output-translations (system-base system)))
+
+(defun ignore-systems (warnings systems)
+  (let ((system-bases
+          (append (mapcar #'system-base systems)
+                  (mapcar #'system-fasl-base systems))))
+    (remove-if (lambda (w)
+                 (when-let (file (warning-info-source-file w))
+                   (some (op (uiop:subpathp file _))
+                         system-bases)))
+               warnings)))
+
+(defun report-html (report &key ((:stream *html*) *html*) ignore-types ignore-systems)
   (check-type report warning-report)
-  (let* ((system (warning-report-system report))
-         (warnings (warning-report-warnings report))
+  (with-html
+    (local
+      (def system (warning-report-system report))
+      (def warnings
+        (~> report
+            warning-report-warnings
+            (ignore-types ignore-types)
+            (ignore-systems ignore-systems)))
 
-         (by-source-file (assort warnings :test #'equal :key #'warning-info-source-file))
-         (by-source-file (dsu-sort by-source-file #'> :key #'length))
+      (def by-source-file (assort warnings :test #'equal :key #'warning-info-source-file))
+      (def by-source-file (sort-by-severity by-source-file))
 
-         (by-severity (assort warnings :key #'warning-info-condition-severity))
-         (by-severity (dsu-sort by-severity #'> :key (op (warning-info-condition-severity-level (first _)))))
+      (def by-severity (assort warnings :key #'warning-info-severity))
+      (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-info-severity-level (first _)))))
 
-         (by-source-file-id "by-source-file")
-         (by-severity-id "by-severity")
-         (by-source-file-hash (fmt "#~a" by-source-file-id))
-         (by-severity-hash (fmt "#~a" by-severity-id)))
+      (def by-source-file-id "by-source-file")
+      (def by-severity-id "by-severity")
+      (def by-source-file-hash (fmt "#~a" by-source-file-id))
+      (def by-severity-hash (fmt "#~a" by-severity-id))
 
-    (with-html
+      (defun sort-by-severity (notes)
+        "First all the files with warnings, then all the files with no warnings but with style warnings, then all the files with notes, but no warnings or style warnings."
+        (dsu-sort (copy-seq notes)
+                  (lambda (xs ys)
+                    (nlet rec ((xs xs)
+                               (ys ys))
+                      (if (or (endp xs) (endp ys)) nil
+                          (or (> (first xs) (first ys))
+                              (and (= (first xs) (first ys))
+                                   (rec (rest xs) (rest ys)))))))
+                  :key (op (multiple-value-list (count-severities _)))))
+
+      (defun count-severities (notes)
+        (let ((warning-count 0)
+              (style-warning-count 0)
+              (note-count 0))
+          (dolist (note notes)
+            (ecase-of severity (warning-info-severity note)
+              (:warning (incf warning-count))
+              (:style-warning (incf style-warning-count))
+              (:note (incf note-count))))
+          (values warning-count style-warning-count note-count)))
+
+      (defun quantify-notes (notes)
+        (multiple-value-bind (warning-count style-warning-count note-count)
+            (count-severities notes)
+          ;; TODO Do better.
+          (with-output-to-string (s)
+            (when (plusp warning-count)
+              (format s "~a warning~:p" warning-count))
+
+            (when (plusp style-warning-count)
+              (when (plusp warning-count)
+                ;; There are warnings.
+                (if (plusp note-count)
+                    ;; There are also notes, so this is item 2 of 3.
+                    (format s ", ")
+                    (format s " and ")))
+              (format s "~a style warning~:p" style-warning-count))
+
+            (when (plusp note-count)
+              (when (plusp (min style-warning-count warning-count))
+                ;; Both nonzero.
+                (format s ","))
+              (when (plusp (logior style-warning-count warning-count))
+                ;; Either one nonzero.
+                (format s " and "))
+              (format s "~a note~:p" note-count)))))
+
       (:doctype)
       (:html
         (:head
           (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
           (:title ("Report for system ~s" system))
-          (:link
-            :rel "stylesheet"
-            :href "https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css"
-            :integrity "sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M"
-            :crossorigin "anonymous"))
+          (:style (:raw html-report-css)))
 
         (:body
           (:div.container
@@ -205,55 +316,54 @@ without having to worry whether the package actually exists."
                (:li (:a :href by-source-file-hash "By file"))
                (:li (:a :href by-severity-hash "By severity"))))
 
-           (:p ("~a warning~:p in ~a file~:p"
-                (length warnings)
-                (length by-source-file)))
+           (:p
+             (when warnings
+               (fmt "There are ~a in ~a file~:p"
+                    (quantify-notes warnings)
+                    (length by-source-file))))
 
            (when by-source-file
              (:h1 "By file")
-             (:div :id by-source-file-id :role "tablist"
+             (:ul :id by-source-file-id
                (do-each (file-warnings by-source-file)
-                 (let* ((file (warning-info-source-file (first file-warnings)))
-                        (title
-                          (fmt "File: ~a (~a notes)"
-                               (or (remove-homedir file) "Unknown")
-                               (length file-warnings))))
-                   (accordion-card
-                     :title title
-                     :parent by-source-file-id
+                 (let* ((file (warning-info-source-file (first file-warnings))))
+                   (:details
+                     (:summary
+                       (quantify-notes file-warnings)
+                       " in "
+                       (if file
+                           ("file ~a"
+                            (remove-homedir file))
+                           "no file")
+                       (:span.pathname file))
                      (:ul.list-group
                       (dolist (warning file-warnings)
                         (render-warning warning))))))))
 
            (when by-severity
              (:h1 "By severity")
-             (:div :id by-severity-id :role "tablist"
+             (:ul :id by-severity-id
                (do-each (warnings by-severity)
-                 (let ((severity (warning-info-condition-severity (first warnings))))
-                   (accordion-card
-                     :title (fmt "Severity: ~a (~a)"
-                                 (severity-title severity)
-                                 (length warnings))
-                     :parent by-severity-id
+                 (let ((severity (warning-info-severity (first warnings))))
+                   (:details
+                     (:summary (fmt "~a ~a~:*~:p"
+                                    (length warnings)
+                                    (severity-title severity)))
                      (:ul.list-group
                       (dolist (warning warnings)
-                        (render-warning warning)))))))))
-
-          (:script :src "https://code.jquery.com/jquery-3.2.1.slim.min.js" :integrity "sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" :crossorigin "anonymous")
-          (:script :src "https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" :integrity "sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" :crossorigin "anonymous")
-          (:script :src "https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/js/bootstrap.min.js" :integrity "sha384-h0AbiXch4ZDo7tp9hKZ4TsHbi047NrKGLO3SEJAg45jXxnGIfYzk4Si90RDIqNm1" :crossorigin "anonymous"))))))
+                        (render-warning warning))))))))))))))
 
 (defun severity-title (sev)
   (ecase-of severity sev
-    (:note "Note")
-    (:warning "Warning")
-    (:style-warning "Style warning")))
+    (:note "note")
+    (:warning "warning")
+    (:style-warning "style warning")))
 
 (defun severity-class (sev)
   (ecase-of severity sev
-    (:note "list-group-item-info")
-    (:warning "list-group-item-danger")
-    (:style-warning "list-group-item-warning")))
+    (:note "severity-note")
+    (:warning "severity-warning")
+    (:style-warning "severity-style-warning")))
 
 (defun pathname-file-url (file)
   (let ((file (truename file)))
@@ -273,30 +383,54 @@ without having to worry whether the package actually exists."
 
 (defun render-warning (warning &optional (*html* *html*))
   (check-type warning warning-info)
-  (with-prefixed-accessors ((file   -source-file)
-                            (type   -condition-type)
-                            (string -string))
-      warning-info warning
-    (with-html
-      (:li.list-group-item
-       :class (severity-class (warning-info-condition-severity warning))
-       (:small (:code
-                 (ematch type
-                   ((delayed-symbol (or "CL" "COMMON-LISP")
-                                    name)
-                    name)
-                   ((delayed-symbol "KEYWORD" name)
-                    (fmt ":~a" name))
-                   ((delayed-symbol package name)
-                    (fmt "~a:~a" package name)))))
-       (:a :href (if file (pathname-file-url file) "#")
-         :title (and file (fmt "In ~a" (remove-homedir file)))
-         (:pre (:code string)))))))
+  (with-html
+    (local
+      (def file (warning-info-source-file warning))
+      (def class (warning-info-class warning))
+      (def string (trim-whitespace (warning-info-string warning)))
+      (def severity (warning-info-severity warning))
 
-(defun report-html-file (report)
+      (defun show-string ()
+        (:pre (:code string)))
+
+      (defun maybe-link ()
+        (if file
+            (let ((url (pathname-file-url file)))
+              (:a.file-link
+               :href url
+               :title (fmt "In ~a" (remove-homedir file))
+               (show-string)))
+            (show-string)))
+
+      (defun delayed-symbol-string (class)
+        (ematch class
+          ((delayed-symbol (or "CL" "COMMON-LISP")
+                           name)
+           name)
+          ((delayed-symbol "KEYWORD" name)
+           (fmt ":~a" name))
+          ((delayed-symbol package name)
+           (fmt "~a:~a" package name))))
+
+      (defun teaser (string)
+        (~> string
+            collapse-whitespace
+            (ellipsize 60)))
+
+      (:li.warning
+       :class (severity-class severity)
+       (:figure
+         (if (> (length string) 80)
+             (:details (:summary (:code (teaser string)))
+               (maybe-link))
+             (maybe-link))
+         (:figcaption
+           (:small (:code (delayed-symbol-string class)))))))))
+
+(defun report-html-file (report &rest args &key &allow-other-keys)
   (uiop:with-temporary-file (:stream s
                              :direction :output
                              :keep t
                              :pathname p)
-    (report-html report s)
+    (apply #'report-html report :stream s args)
     (pathname-file-url p)))
