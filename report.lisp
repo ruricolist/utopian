@@ -1,165 +1,20 @@
 ;;;; utopian.lisp
 
-(in-package #:utopian)
+(defpackage :utopian/report
+  (:use :cl :alexandria :serapeum :trivia :spinneret
+    :utopian/collect)
+  (:shadowing-import-from :serapeum :@)
+  (:export :report-html-file))
+
+(in-package :utopian/report)
 
 ;;; "utopian" goes here. Hacks and glory await!
-
-(defmacro with-prefixed-accessors (accessors prefix object &body body)
-  ;; TODO Should the interning be done in the current package, or in
-  ;; the package of the symbol being prefixed to, or in the package of
-  ;; the prefix? E.g. what if the symbol being prefixed to is from a
-  ;; different package?
-  (let ((accessors
-          (collecting
-            (flet ((save (slot accessor)
-                     (collect (list slot
-                                    (symbolicate prefix accessor)))))
-              (dolist (spec accessors)
-                (ematch spec
-                  ((list (and slot (type symbol))
-                         (and accessor (type symbol)))
-                   (save slot accessor))
-                  ((and sym (type symbol))
-                   (save sym sym))))))))
-    `(with-accessors ,accessors ,object
-       ,@body)))
-
-(deftype severity ()
-  '(member :note :style-warning :warning))
-
-(defun severity-level (sev)
-  (ecase-of severity sev
-    (:note 0)
-    (:style-warning 1)
-    (:warning 2)))
-
-(defgeneric condition-severity (condition)
-  (:method ((c warning)) :warning)
-  (:method ((c style-warning)) :style-warning)
-  #+sbcl (:method ((c sb-ext:compiler-note)) :note))
-
-(defun sort-warnings (warnings)
-  (~> warnings
-      (sort-new #'> :key #'warning-info-severity-level)
-      (coerce 'list)))
-
-(defconstructor delayed-symbol
-  "An unresolved symbol that can be freely written out and read in
-without having to worry whether the package actually exists."
-  (package string)
-  (name string))
-
-(defun symbol->delayed-symbol (symbol)
-  (delayed-symbol
-   (package-name (symbol-package symbol))
-   (symbol-name symbol)))
-
-(defun delayed-symbol->symbol (ds)
-  (let-match1 (delayed-symbol package name) ds
-    (or (find-symbol name (find-package package))
-        (error "No such symbol as ~a in ~a" name package))))
-
-(defstruct-read-only warning-info
-  ;; We do not store the condition itself to ensure that instances can
-  ;; be written and read.
-  (class :type delayed-symbol)
-  (severity :type severity)
-  (string :type string)
-  ;; TODO Do better.
-  (source-file (or *compile-file-pathname* *load-truename*) :type (or null pathname)))
-
-(defmethod warning-info-severity-level ((self warning-info))
-  (severity-level (warning-info-severity self)))
-
-(defstruct-read-only warning-report
-  (system :type string)
-  (warnings :type list)
-  (lisp-implementation-type
-   (lisp-implementation-type)
-   :type (or string null))
-  (lisp-implementation-version
-   (lisp-implementation-version)
-   :type (or string null)))
-
-(defclass warning-collector ()
-  ((q :initform (queue) :type queue
-      :reader warning-collector-q)))
-
-(deftype uninteresting-warning ()
-  `(or uiop:compile-warned-warning
-       ,@(filter #'symbolp uiop:*usual-uninteresting-conditions*)
-       (satisfies uiop-finds-uninteresting?)))
-
-(defun uiop-finds-uninteresting? (c)
-  (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*))
-
-(defun uninteresting? (c)
-  (typep c 'uninteresting-warning))
-
-(defgeneric collect-warning (self condition)
-  (:method :around (self condition)
-    (declare (ignore self))
-    (unless (uninteresting? condition)
-      (call-next-method))))
-
-(defmethods warning-collector (self q)
-  (:method collect-warning (self (warning condition))
-    (let ((info
-            (make-warning-info
-             :class (symbol->delayed-symbol (type-of warning))
-             :string (princ-to-string warning)
-             :severity (condition-severity warning))))
-      (enq info q)))
-
-  (:method warning-collector-report (self system)
-    (make-warning-report :warnings (sort-warnings (qlist q))
-                         :system system))
-
-  (:method warning-collector-handler (self)
-    (curry #'collect-warning self)))
-
-(defsubst make-warning-collector (&rest args &key &allow-other-keys)
-  (apply #'make 'warning-collector args))
-
-(defun call/warning-report (fn system)
-  (let* ((collector (make-warning-collector))
-         (handler (warning-collector-handler collector)))
-    (handler-bind ((warning handler)
-                   #+sbcl (sb-ext:compiler-note handler))
-      (funcall fn))
-    (warning-collector-report collector system)))
-
-(defmacro with-warning-report ((&key (system (required-argument :system))) &body body)
-  `(call/warning-report
-    (lambda ()
-      ,@body)
-    ,system))
-
-(defun export-report (report stream)
-  (with-standard-io-syntax
-    (prin1 report stream)))
-
-(defun import-report (stream)
-  (assure warning-report
-    (with-standard-io-syntax
-      (read stream))))
-
-(defun load-system (system &rest args &key &allow-other-keys)
-  (with-warning-report (:system (string system))
-    (apply #'asdf:load-system system args)))
-
-(defun quickload (system)
-  (unless (find-package :quicklisp)
-    (error "Quicklisp is not installed in this Lisp."))
-  (with-warning-report (:system (string system))
-    (uiop:symbol-call :ql :quickload
-                      (list system)
-                          :verbose t)))
 
 (eval-always
   (defvar *ids* 0)
 
   (defun genid (string)
+    "Generate a unique ID for embedding in HTML."
     (fmt "~a~a" string (finc *ids*))))
 
 (def html-report-css
@@ -207,7 +62,7 @@ without having to worry whether the package actually exists."
   (remove-if (lambda (w)
                (let ((sym
                        (delayed-symbol->symbol
-                        (warning-info-class w))))
+                        (warning-info.class w))))
                  ;; TODO For development.
                  (or (subtypep sym 'uninteresting-warning)
                      (some (op (subtypep sym _))
@@ -225,7 +80,7 @@ without having to worry whether the package actually exists."
           (append (mapcar #'system-base systems)
                   (mapcar #'system-fasl-base systems))))
     (remove-if (lambda (w)
-                 (when-let (file (warning-info-source-file w))
+                 (when-let (file (warning-info.source-file w))
                    (some (op (uiop:subpathp file _))
                          system-bases)))
                warnings)))
@@ -234,18 +89,18 @@ without having to worry whether the package actually exists."
   (check-type report warning-report)
   (with-html
     (local
-      (def system (warning-report-system report))
+      (def system (warning-report.system report))
       (def warnings
         (~> report
-            warning-report-warnings
+            warning-report.warnings
             (ignore-types ignore-types)
             (ignore-systems ignore-systems)))
 
-      (def by-source-file (assort warnings :test #'equal :key #'warning-info-source-file))
+      (def by-source-file (assort warnings :test #'equal :key #'warning-info.source-file))
       (def by-source-file (sort-by-severity by-source-file))
 
-      (def by-severity (assort warnings :key #'warning-info-severity))
-      (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-info-severity-level (first _)))))
+      (def by-severity (assort warnings :key #'warning-info.severity))
+      (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-info.severity-level (first _)))))
 
       (def by-source-file-id "by-source-file")
       (def by-severity-id "by-severity")
@@ -269,7 +124,7 @@ without having to worry whether the package actually exists."
               (style-warning-count 0)
               (note-count 0))
           (dolist (note notes)
-            (ecase-of severity (warning-info-severity note)
+            (ecase-of severity (warning-info.severity note)
               (:warning (incf warning-count))
               (:style-warning (incf style-warning-count))
               (:note (incf note-count))))
@@ -326,7 +181,7 @@ without having to worry whether the package actually exists."
              (:h1 "By file")
              (:ul :id by-source-file-id
                (do-each (file-warnings by-source-file)
-                 (let* ((file (warning-info-source-file (first file-warnings))))
+                 (let* ((file (warning-info.source-file (first file-warnings))))
                    (:details
                      (:summary
                        (quantify-notes file-warnings)
@@ -344,7 +199,7 @@ without having to worry whether the package actually exists."
              (:h1 "By severity")
              (:ul :id by-severity-id
                (do-each (warnings by-severity)
-                 (let ((severity (warning-info-severity (first warnings))))
+                 (let ((severity (warning-info.severity (first warnings))))
                    (:details
                      (:summary (fmt "~a ~a~:*~:p"
                                     (length warnings)
@@ -385,10 +240,10 @@ without having to worry whether the package actually exists."
   (check-type warning warning-info)
   (with-html
     (local
-      (def file (warning-info-source-file warning))
-      (def class (warning-info-class warning))
-      (def string (trim-whitespace (warning-info-string warning)))
-      (def severity (warning-info-severity warning))
+      (def file (warning-info.source-file warning))
+      (def class (warning-info.class warning))
+      (def string (trim-whitespace (warning-info.string warning)))
+      (def severity (warning-info.severity warning))
 
       (defun show-string ()
         (:pre (:code string)))
@@ -403,14 +258,13 @@ without having to worry whether the package actually exists."
             (show-string)))
 
       (defun delayed-symbol-string (class)
-        (ematch class
-          ((delayed-symbol (or "CL" "COMMON-LISP")
-                           name)
-           name)
-          ((delayed-symbol "KEYWORD" name)
-           (fmt ":~a" name))
-          ((delayed-symbol package name)
-           (fmt "~a:~a" package name))))
+        (let ((package (delayed-symbol.package class))
+              (name (delayed-symbol.name class)))
+          (cond ((member package '("CL" "COMMON-LISP") :test #'equal)
+                 name)
+                ((equal package "KEYWORD")
+                 (fmt ":~a" name))
+                (t (fmt "~a:~a" package name)))))
 
       (defun teaser (string)
         (~> string

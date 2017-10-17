@@ -1,8 +1,7 @@
 ;;;; package.lisp
 
 (defpackage #:utopian
-  (:use #:cl #:alexandria #:serapeum #:trivia #:spinneret)
-  (:shadowing-import-from #:serapeum #:@)
+  (:use :utopian/collect :utopian/report)
   (:export
    #:report-html-file
    #:export-report
