@@ -1,7 +1,7 @@
 ;;;; package.lisp
 
 (defpackage #:utopian
-  (:use :utopian/collect :utopian/report)
+  (:use)
   (:export
    #:report-html-file
    #:export-report

@@ -17,6 +17,7 @@
    #:warning-info.string
    #:warning-report.system
    #:warning-report.warnings
+   #:warning-report.environment-info-plist
    #:uninteresting-warning
    #:severity
    #:warning-info
@@ -87,6 +88,29 @@ without having to worry whether the package actually exists."
 (defmethod warning-info.severity-level ((self warning-info))
   (severity-level (warning-info.severity self)))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun make-keyword (x)
+    (intern (string x) :keyword)))
+
+(defun environment-info-plist ()
+  "Gather Lisp-supplied environment info."
+  (macrolet ((fn (name)
+               `(list ,(make-keyword name) (,name)))
+             (getenv (name)
+               `(list ,(make-keyword name) (uiop:getenvp ,(string name)))))
+    (append
+     (fn lisp-implementation-type)
+     (fn lisp-implementation-version)
+     (fn machine-instance)
+     (fn machine-type)
+     (fn machine-version)
+     (fn short-site-name)
+     (fn long-site-name)
+     (getenv PATH)
+     (getenv OSTYPE)
+     (getenv HOSTTYPE)
+     (getenv LANG))))
+
 (defstruct (warning-report (:conc-name warning-report.))
   (system (error "No system!")
    :type string
@@ -94,13 +118,13 @@ without having to worry whether the package actually exists."
   (warnings (error "No warnings!")
    :type list
    :read-only t)
-  (lisp-implementation-type
-   (lisp-implementation-type)
+  (machine-instance
+   (machine-instance)
    :type (or string null)
    :read-only t)
-  (lisp-implementation-version
-   (lisp-implementation-version)
-   :type (or string null)
+  (environment-info-plist
+   (environment-info-plist)
+   :type list
    :read-only t))
 
 (defclass warning-collector ()
@@ -163,22 +187,22 @@ without having to worry whether the package actually exists."
       ,@body)
     ,system))
 
-(defun export-report (report stream)
+(defun utopian:export-report (report stream)
   (with-standard-io-syntax
     (prin1 report stream)))
 
-(defun import-report (stream)
+(defun utopian:import-report (stream)
   (let ((report
           (with-standard-io-syntax
             (read stream))))
     (assert (typep report 'warning-report))
     report))
 
-(defun load-system (system &rest args &key &allow-other-keys)
+(defun utopian:load-system (system &rest args &key &allow-other-keys)
   (with-warning-report (:system (string system))
     (apply #'asdf:load-system system args)))
 
-(defun quickload (system)
+(defun utopian:quickload (system)
   (unless (find-package :quicklisp)
     (error "Quicklisp is not installed in this Lisp."))
   (with-warning-report (:system (string system))

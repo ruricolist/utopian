@@ -5,17 +5,17 @@
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"
   :depends-on ("utopian/collect"
-               "utopian/report")
-  :serial t
-  :components ((:file "package")))
+               "utopian/report"))
 
 (asdf:defsystem "utopian/collect"
   :description "Save warnings."
   :long-description "This is the part of Utopian that records the warnings. It has no dependencies."
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"
+  :depends-on ()
   :serial t
-  :components ((:file "collect")))
+  :components ((:file "package")
+               (:file "collect")))
 
 (asdf:defsystem "utopian/report"
   :description "Generate reports."
@@ -23,6 +23,7 @@
   :license "MIT"
   :depends-on ("utopian/collect"
                "serapeum"
+               "quri"
                ;; For the HTML.
                "spinneret"
                "spinneret/cl-markdown"

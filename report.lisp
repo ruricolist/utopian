@@ -85,7 +85,8 @@
                          system-bases)))
                warnings)))
 
-(defun report-html (report &key ((:stream *html*) *html*) ignore-types ignore-systems)
+(defun report-html (report &key ((:stream *html*) *html*) ignore-types ignore-systems
+                    &aux (*print-pretty* t))
   (check-type report warning-report)
   (with-html
     (local
@@ -164,49 +165,49 @@
           (:style (:raw html-report-css)))
 
         (:body
-          (:div.container
+          (:div
 
-           (when (or by-source-file by-severity)
-             (:ul
-               (:li (:a :href by-source-file-hash "By file"))
-               (:li (:a :href by-severity-hash "By severity"))))
+            (when (or by-source-file by-severity)
+              (:ul
+                (:li (:a :href by-source-file-hash "By file"))
+                (:li (:a :href by-severity-hash "By severity"))))
 
-           (:p
-             (when warnings
-               (fmt "There are ~a in ~a file~:p"
-                    (quantify-notes warnings)
-                    (length by-source-file))))
+            (:p
+              (when warnings
+                (fmt "There are ~a in ~a file~:p"
+                     (quantify-notes warnings)
+                     (length by-source-file))))
 
-           (when by-source-file
-             (:h1 "By file")
-             (:ul :id by-source-file-id
-               (do-each (file-warnings by-source-file)
-                 (let* ((file (warning-info.source-file (first file-warnings))))
-                   (:details
-                     (:summary
-                       (quantify-notes file-warnings)
-                       " in "
-                       (if file
-                           ("file ~a"
-                            (remove-homedir file))
-                           "no file")
-                       (:span.pathname file))
-                     (:ul.list-group
-                      (dolist (warning file-warnings)
-                        (render-warning warning))))))))
+            (when by-source-file
+              (:h1 "By file")
+              (:ul :id by-source-file-id
+                (do-each (file-warnings by-source-file)
+                  (let* ((file (warning-info.source-file (first file-warnings))))
+                    (:details
+                      (:summary
+                        (quantify-notes file-warnings)
+                        " in "
+                        (if file
+                            ("file ~a"
+                             (remove-homedir file))
+                            "no file")
+                        (:span.pathname file))
+                      (:ul.list-group
+                       (dolist (warning file-warnings)
+                         (render-warning warning))))))))
 
-           (when by-severity
-             (:h1 "By severity")
-             (:ul :id by-severity-id
-               (do-each (warnings by-severity)
-                 (let ((severity (warning-info.severity (first warnings))))
-                   (:details
-                     (:summary (fmt "~a ~a~:*~:p"
-                                    (length warnings)
-                                    (severity-title severity)))
-                     (:ul.list-group
-                      (dolist (warning warnings)
-                        (render-warning warning))))))))))))))
+            (when by-severity
+              (:h1 "By severity")
+              (:ul :id by-severity-id
+                (do-each (warnings by-severity)
+                  (let ((severity (warning-info.severity (first warnings))))
+                    (:details
+                      (:summary (fmt "~a ~a~:*~:p"
+                                     (length warnings)
+                                     (severity-title severity)))
+                      (:ul.list-group
+                       (dolist (warning warnings)
+                         (render-warning warning))))))))))))))
 
 (defun severity-title (sev)
   (ecase-of severity sev
@@ -222,10 +223,12 @@
 
 (defun pathname-file-url (file)
   (let ((file (truename file)))
-    (fmt "file:///~{~a/~}~a~@[.~a~]"
-         (rest (pathname-directory file))
-         (pathname-name file)
-         (pathname-type file))))
+    (fmt "file:///~@[~a:/~]~{~a/~}~a~@[.~a~]"
+         (and (uiop:os-windows-p)
+              (pathname-device file))
+         (mapcar #'quri:url-encode (pathname-directory file))
+         (quri:url-encode (pathname-name file))
+         (quri:url-encode (pathname-type file)))))
 
 (defun remove-homedir (file)
   (if (pathnamep file)
@@ -281,7 +284,19 @@
          (:figcaption
            (:small (:code (delayed-symbol-string class)))))))))
 
-(defun report-html-file (report &rest args &key &allow-other-keys)
+(defun report-environment (report)
+  (when-let (plist (warning-report.environment-info-plist report))
+    (with-html
+      (:table
+        (:caption "Environment")
+        (doplist (k v plist)
+          (when v
+            (:tr
+              (:th :scope "row"
+                (fmt "~:(~a~)" (substitute #\Space #\- (string k))))
+              (:td v))))))))
+
+(defun utopian:report-html-file (report &rest args &key &allow-other-keys)
   (uiop:with-temporary-file (:stream s
                              :direction :output
                              :keep t
