@@ -263,48 +263,49 @@
 
 (defun render-warning (warning &optional (*html* *html*))
   (check-type warning warning-info)
-  (with-html
-    (local
-      (def file (warning-info.source-file warning))
-      (def class (warning-info.class warning))
-      (def string (trim-whitespace (warning-info.string warning)))
-      (def severity (warning-info.severity warning))
+  (nest
+   (with-html)
+   (local
+     (def file (warning-info.source-file warning))
+     (def class (warning-info.class warning))
+     (def string (trim-whitespace (warning-info.string warning)))
+     (def severity (warning-info.severity warning))
 
-      (defun show-string ()
-        (:pre (:code string)))
+     (defun show-string ()
+       (:pre (:code string)))
 
-      (defun maybe-link ()
-        (if file
-            (let ((url (pathname-file-url file)))
-              (:a.file-link
-               :href url
-               :title (fmt "In ~a" (remove-homedir file))
-               (show-string)))
-            (show-string)))
+     (defun maybe-link ()
+       (if file
+           (let ((url (pathname-file-url file)))
+             (:a.file-link
+              :href url
+              :title (fmt "In ~a" (remove-homedir file))
+              (show-string)))
+           (show-string)))
 
-      (defun delayed-symbol-string (class)
-        (let ((package (delayed-symbol.package class))
-              (name (delayed-symbol.name class)))
-          (cond ((member package '("CL" "COMMON-LISP") :test #'equal)
-                 name)
-                ((equal package "KEYWORD")
-                 (fmt ":~a" name))
-                (t (fmt "~a:~a" package name)))))
+     (defun delayed-symbol-string (class)
+       (let ((package (delayed-symbol.package class))
+             (name (delayed-symbol.name class)))
+         (cond ((member package '("CL" "COMMON-LISP") :test #'equal)
+                name)
+               ((equal package "KEYWORD")
+                (fmt ":~a" name))
+               (t (fmt "~a:~a" package name)))))
 
-      (defun teaser (string)
-        (~> string
-            collapse-whitespace
-            (ellipsize 60)))
+     (defun teaser (string)
+       (~> string
+           collapse-whitespace
+           (ellipsize 60)))
 
-      (:li.warning
-       :class (severity-class severity)
-       (:figure
-         (if (> (length string) 80)
-             (:details (:summary (:code (teaser string)))
-               (maybe-link))
-             (maybe-link))
-         (:figcaption
-           (:small (:code (delayed-symbol-string class)))))))))
+     (:li.warning
+      :class (severity-class severity)
+      (:figure
+        (if (> (length string) 80)
+            (:details (:summary (:code (teaser string)))
+              (maybe-link))
+            (maybe-link))
+        (:figcaption
+          (:small (:code (delayed-symbol-string class)))))))))
 
 (defun report-environment (report)
   (flet ((th (string)
