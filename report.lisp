@@ -239,7 +239,9 @@
     (fmt "file:///~@[~a:/~]~{~a/~}~a~@[.~a~]"
          (and (uiop:os-windows-p)
               (pathname-device file))
-         (mapcar #'quri:url-encode (pathname-directory file))
+         (mapcar #'quri:url-encode
+                 (drop-while #'keywordp
+                             (pathname-directory file)))
          (quri:url-encode (pathname-name file))
          (quri:url-encode (pathname-type file)))))
 
