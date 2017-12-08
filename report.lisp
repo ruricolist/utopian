@@ -298,16 +298,27 @@
            (:small (:code (delayed-symbol-string class)))))))))
 
 (defun report-environment (report)
-  (when-let (plist (warning-report.environment-info-plist report))
-    (with-html
-      (:table
-        (:caption "Environment")
-        (doplist (k v plist)
-          (when v
-            (:tr
-              (:th :scope "row"
-                (fmt "~:(~a~)" (substitute #\Space #\- (string k))))
-              (:td v))))))))
+  (flet ((th (string)
+           (with-html
+             (:th :scope "row" :style "text-align: left"
+               string))))
+    (let ((lisp-info (warning-report.lisp-env-plist report))
+          (os-info (warning-report.os-env-plist report)))
+      (when (or lisp-info os-info)
+        (with-html
+          (:table
+            (:caption "Environment")
+            (doplist (k v lisp-info)
+              (when v
+                (unless (equal v "unspecified")
+                  (:tr
+                    (th (fmt "~@(~a~)" (substitute #\Space #\- (string k))))
+                    (:td v)))))
+            (doplist (k v os-info)
+              (when v
+                (:tr (th (fmt "$~:@(~a~)" k))
+                  (:td :style "font-family: monospace"
+                    v))))))))))
 
 (defun utopian:report-html-file (report &rest args &key &allow-other-keys)
   (uiop:with-temporary-file (:stream s

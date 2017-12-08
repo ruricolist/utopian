@@ -17,7 +17,8 @@
    #:warning-info.string
    #:warning-report.system
    #:warning-report.warnings
-   #:warning-report.environment-info-plist
+   #:warning-report.lisp-env-plist
+   #:warning-report.os-env-plist
    #:uninteresting-warning
    #:severity
    #:warning-info
@@ -103,12 +104,10 @@ without having to worry whether the package actually exists."
        (asdf:component-name system)
        system)))
 
-(defun environment-info-plist ()
+(defun lisp-env-plist ()
   "Gather Lisp-supplied environment info."
   (macrolet ((fn (name)
-               `(list ,(make-keyword name) (,name)))
-             (getenv (name)
-               `(list ,(make-keyword name) (uiop:getenvp ,(string name)))))
+                 `(list ,(make-keyword name) (,name))))
     (append
      (fn lisp-implementation-type)
      (fn lisp-implementation-version)
@@ -116,7 +115,12 @@ without having to worry whether the package actually exists."
      (fn machine-type)
      (fn machine-version)
      (fn short-site-name)
-     (fn long-site-name)
+     (fn long-site-name))))
+
+(defun os-env-plist ()
+  (macrolet ((getenv (name)
+               `(list ,(make-keyword name) (uiop:getenvp ,(string name)))))
+    (append
      (getenv PATH)
      (getenv OSTYPE)
      (getenv HOSTTYPE)
@@ -133,8 +137,12 @@ without having to worry whether the package actually exists."
    (machine-instance)
    :type (or string null)
    :read-only t)
-  (environment-info-plist
-   (environment-info-plist)
+  (lisp-env-plist
+   (lisp-env-plist)
+   :type list
+   :read-only t)
+  (os-env-plist
+   (os-env-plist)
    :type list
    :read-only t))
 
