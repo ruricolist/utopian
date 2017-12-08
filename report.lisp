@@ -17,46 +17,53 @@
     "Generate a unique ID for embedding in HTML."
     (fmt "~a~a" string (finc *ids*))))
 
+;; Pretty colors from http://clrs.cc/.
+(def blue "#0074D9")
+(def red "#FF4136")
+(def yellow "#FFDC00")
+(def orange "#FF851B")
+(def black "#111111")
+
+(def normalize.css
+  (read-file-into-string
+   (asdf:system-relative-pathname :utopian #p"normalize.css")))
+
+(def custom-css
+  (lass:compile-and-write
+   '("*" :box-sizing "border-box")
+   '("body"
+     :margin "4em auto"
+     :max-width "65em"
+     :line-height "1.6"
+     :font-size "18px"
+     :color "222"
+     :padding 0
+     :font-family "sans-serif"
+     :font-feature-settings "tnum")
+   '("pre"
+     :line-height "1.2")
+   '("h1, h2, h3, h4, h5, h6"
+     :line-height "1.2")
+   '("ul"
+     :list-style-type "none"
+     :padding-left "0")
+   '("ul ul"
+     :padding-left "1em")
+   '(".warning"
+     :margin "1em auto")
+   '(".warning a"
+     :text-decoration "none"
+     :color "inherit")
+   '(".sc" :font-feature-settings "smcp")
+   '(".pathname" :font-family "mono")
+   `(".severity-warning figcaption" :color ,red)
+   `(".severity-style-warning figcaption" :color ,orange)
+   `(".severity-info figcaption" :color ,blue)))
+
 (def html-report-css
-  (string+
-   (read-file-into-string
-    (asdf:system-relative-pathname :utopian #p"normalize.css"))
-   (let ((blue "#0074D9")               ;http://clrs.cc/
-         (red "#FF4136")
-         ;; (yellow "#FFDC00")
-         (orange "#FF851B")
-         ;; (black "#111111")
-         )
-     (lass:compile-and-write
-      '("*" :box-sizing "border-box")
-      '("body"
-        :margin "4em auto"
-        :max-width "65em"
-        :line-height "1.6"
-        :font-size "18px"
-        :color "222"
-        :padding 0
-        :font-family "sans-serif"
-        :font-feature-settings "tnum")
-      '("pre"
-        :line-height "1.2")
-      '("h1, h2, h3, h4, h5, h6"
-        :line-height "1.2")
-      '("ul"
-        :list-style-type "none"
-        :padding-left "0")
-      '("ul ul"
-        :padding-left "1em")
-      '(".warning"
-        :margin "1em auto")
-      '(".warning a"
-        :text-decoration "none"
-        :color "inherit")
-      '(".sc" :font-feature-settings "smcp")
-      '(".pathname" :font-family "mono")
-      `(".severity-warning figcaption" :color ,red)
-      `(".severity-style-warning figcaption" :color ,orange)
-      `(".severity-info figcaption" :color ,blue)))))
+  (fmt "~a~%~a"
+       normalize.css
+       custom-css))
 
 (defun ignore-types (warnings types)
   (remove-if (lambda (w)
