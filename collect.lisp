@@ -21,7 +21,8 @@
    #:uninteresting-warning
    #:severity
    #:warning-info
-   #:warning-report))
+   #:warning-report
+   #:system-report))
 
 (in-package :utopian/collect)
 
@@ -88,9 +89,19 @@ without having to worry whether the package actually exists."
 (defmethod warning-info.severity-level ((self warning-info))
   (severity-level (warning-info.severity self)))
 
+(deftype string-designator ()
+  '(or string symbol))
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun make-keyword (x)
-    (intern (string x) :keyword)))
+    (if (keywordp x) x
+        (intern (string x) :keyword))))
+
+(defun system-name (system)
+  (make-keyword
+   (if (typep system 'asdf:system)
+       (asdf:component-name system)
+       system)))
 
 (defun environment-info-plist ()
   "Gather Lisp-supplied environment info."
@@ -126,6 +137,19 @@ without having to worry whether the package actually exists."
    (environment-info-plist)
    :type list
    :read-only t))
+
+(defvar *reports*
+  (make-hash-table)
+  "Reports for systems.")
+
+(defun system-report (system-name)
+  (gethash (make-keyword system-name)
+           *reports*))
+
+(defun (setf system-report) (value system-name)
+  (check-type value warning-report)
+  (setf (gethash (make-keyword system-name) *reports*)
+        value))
 
 (defclass warning-collector ()
   ((warnings
@@ -179,7 +203,10 @@ without having to worry whether the package actually exists."
     (handler-bind ((warning handler)
                    #+sbcl (sb-ext:compiler-note handler))
       (funcall fn))
-    (warning-collector-report collector system)))
+    (setf (system-report system)
+          (warning-collector-report collector system))
+    (after-load-message system)
+    (values)))
 
 (defmacro with-warning-report ((&key (system (error "No system."))) &body body)
   `(call/warning-report
@@ -209,3 +236,12 @@ without having to worry whether the package actually exists."
     (uiop:symbol-call :ql :quickload
                       (list system)
                           :verbose t)))
+
+(defun after-load-message (system)
+  (let ((name (system-name system)))
+    (format t "~&System ~a has been loaded.
+To render a report of any warnings, load system ~a and evaluate:
+    ~s"
+            name
+            :utopian/report
+            `(report-html-file ,name))))
