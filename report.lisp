@@ -100,20 +100,17 @@
 (defmethod report-html ((report symbol) &rest args &key)
   (apply #'report-html (system-report report) args))
 
-(defmethod report-html ((report warning-report)
+(defmethod report-html ((report list)
                         &key ((:stream *html*) *html*) ignore-types ignore-systems
                         &aux (*print-pretty* t))
-  (check-type report warning-report)
   (nest
    (with-html)
+   (destructuring-bind (&key system-name warnings &allow-other-keys) report)
+   (let ((warnings
+           (~> warnings
+               (ignore-types ignore-types)
+               (ignore-systems ignore-systems)))))
    (local
-     (def system (warning-report.system report))
-     (def warnings
-       (~> report
-           warning-report.warnings
-           (ignore-types ignore-types)
-           (ignore-systems ignore-systems)))
-
      (def by-source-file (assort warnings :test #'equal :key #'warning-info.source-file))
      (def by-source-file (sort-by-severity by-source-file))
 
@@ -126,7 +123,9 @@
      (def by-severity-hash (fmt "#~a" by-severity-id))
 
      (defun sort-by-severity (notes)
-       "First all the files with warnings, then all the files with no warnings but with style warnings, then all the files with notes, but no warnings or style warnings."
+       "First all the files with warnings, then all the files with no
+warnings but with style warnings, then all the files with notes, but
+no warnings or style warnings."
        (dsu-sort (copy-seq notes)
                  (lambda (xs ys)
                    (nlet rec ((xs xs)
@@ -178,7 +177,7 @@
      (:html
        (:head
          (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
-         (:title ("Report for system ~s" system))
+         (:title ("Report for system ~s" system-name))
          (:style (:raw html-report-css)))
 
        (:body
@@ -312,19 +311,19 @@
            (with-html
              (:th :scope "row" :style "text-align: left"
                string))))
-    (let ((lisp-info (warning-report.lisp-env-plist report))
-          (os-info (warning-report.os-env-plist report)))
-      (when (or lisp-info os-info)
+    (destructuring-bind (&key lisp-env os-env &allow-other-keys)
+        report
+      (when (or lisp-env os-env)
         (with-html
           (:table
             (:caption "Environment")
-            (doplist (k v lisp-info)
+            (doplist (k v lisp-env)
               (when v
                 (unless (equal v "unspecified")
                   (:tr
                     (th (fmt "~@(~a~)" (substitute #\Space #\- (string k))))
                     (:td v)))))
-            (doplist (k v os-info)
+            (doplist (k v os-env)
               (when v
                 (:tr (th (fmt "$~:@(~a~)" k))
                   (:td :style "font-family: monospace"

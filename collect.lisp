@@ -15,14 +15,9 @@
    #:warning-info.severity
    #:warning-info.severity-level
    #:warning-info.string
-   #:warning-report.system
-   #:warning-report.warnings
-   #:warning-report.lisp-env-plist
-   #:warning-report.os-env-plist
    #:uninteresting-warning
    #:severity
    #:warning-info
-   #:warning-report
    #:system-report))
 
 (in-package :utopian/collect)
@@ -76,6 +71,10 @@ without having to worry whether the package actually exists."
     (or (find-symbol name (find-package package))
         (error "No such symbol as ~a in ~a" name package))))
 
+(defun current-source-file ()
+  ;; TODO Do better.
+  (or *compile-file-pathname* *load-truename*))
+
 (defstruct (warning-info (:conc-name warning-info.))
   ;; We do not store the condition itself to ensure that instances can
   ;; be written and read.
@@ -83,7 +82,7 @@ without having to worry whether the package actually exists."
   (severity (error "No severity!") :type severity :read-only t)
   (string (error "No string!") :type string :read-only t)
   ;; TODO Do better.
-  (source-file (or *compile-file-pathname* *load-truename*)
+  (source-file (current-source-file)
    :type (or null pathname)
    :read-only t))
 
@@ -106,58 +105,83 @@ without having to worry whether the package actually exists."
 
 (defun lisp-env-plist ()
   "Gather Lisp-supplied environment info."
-  (macrolet ((fn (name)
-                 `(list ,(make-keyword name) (,name))))
-    (append
-     (fn lisp-implementation-type)
-     (fn lisp-implementation-version)
-     (fn machine-instance)
-     (fn machine-type)
-     (fn machine-version)
-     (fn short-site-name)
-     (fn long-site-name))))
+  (list
+   :lisp-implementation-type (lisp-implementation-type)
+   :lisp-implementation-version (lisp-implementation-version)
+   :machine-instance (machine-instance)
+   :machine-type (machine-type)
+   :machine-version (machine-version)
+   :short-site-name (short-site-name)
+   :long-site-name (long-site-name)))
 
 (defun os-env-plist ()
-  (macrolet ((getenv (name)
-               `(list ,(make-keyword name) (uiop:getenvp ,(string name)))))
-    (append
-     (getenv PATH)
-     (getenv OSTYPE)
-     (getenv HOSTTYPE)
-     (getenv LANG))))
+  (list
+   :path (uiop:getenv "PATH")
+   :ostype (uiop:getenv "OSTYPE")
+   :hosttype (uiop:getenv "HOSTTYPE")
+   :lang (uiop:getenv "LANG")))
 
-(defstruct (warning-report (:conc-name warning-report.))
-  (system (error "No system!")
-   :type string
-   :read-only t)
-  (warnings (error "No warnings!")
-   :type list
-   :read-only t)
-  (machine-instance
-   (machine-instance)
-   :type (or string null)
-   :read-only t)
-  (lisp-env-plist
-   (lisp-env-plist)
-   :type list
-   :read-only t)
-  (os-env-plist
-   (os-env-plist)
-   :type list
-   :read-only t))
+(defun make-warning-report (system warnings)
+  (list :system-name (system-name system)
+        :warnings (sort-warnings (reverse warnings))
+        :lisp-env (lisp-env-plist)
+        :os-env (os-env-plist)))
+
+(defun reports-dir ()
+  (ensure-directories-exist
+   (uiop:merge-pathnames*
+    "utopian/systems/"
+    uiop:*temporary-directory*)))
+
+(defun escape-system-name (name)
+  (substitute #\_ #\/ (string (system-name name))))
+
+(defun system-report-file (system)
+  (let ((system (system-name system)))
+    (uiop:merge-pathnames*
+     (make-pathname :name (escape-system-name system))
+     (reports-dir))))
+
+(defun save-report (report)
+  (let* ((system (getf report :system-name))
+         (file (system-report-file system)))
+    (with-open-file (out file
+                         :direction :output
+                         :if-exists :supersede)
+      (prin1 report out))))
+
+(defun reload-report (system &key (error t))
+  (let* ((name (system-name system))
+         (file (system-report-file name))
+         (report
+           (with-open-file (in file :direction :input)
+             (read in))))
+    (if (and (plist? report)
+             (not (null report)))
+        report
+        (when error
+          (error "Report for ~a was corrupt." name)))))
+
+(defun plist? (x)
+  (and (listp x)
+       (evenp (length x))))
+
+(defun report? (report)
+  (and report (plist? report)))
 
 (defvar *reports*
   (make-hash-table)
   "Reports for systems.")
 
 (defun system-report (system-name)
-  (gethash (make-keyword system-name)
-           *reports*))
+  (reload-report system-name))
 
-(defun (setf system-report) (value system-name)
-  (check-type value warning-report)
-  (setf (gethash (make-keyword system-name) *reports*)
-        value))
+(defun (setf system-report) (report system-name)
+  (assert (report? report))
+  (assert (string= (getf report :system-name)
+                   system-name))
+  (prog1 report
+    (save-report report)))
 
 (defclass warning-collector ()
   ((warnings
@@ -174,7 +198,7 @@ without having to worry whether the package actually exists."
   (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*))
 
 (defun uninteresting? (c)
-  (typep c 'uninteresting-warning))
+  (or (typep c 'uninteresting-warning)))
 
 (defgeneric collect-warning (self condition)
   (:method :around (self condition)
@@ -193,9 +217,7 @@ without having to worry whether the package actually exists."
 
 (defmethod warning-collector-report ((self warning-collector) system)
   (with-slots (warnings) self
-    (make-warning-report
-     :warnings (sort-warnings (reverse warnings))
-     :system system)))
+    (make-warning-report system warnings)))
 
 (defmethod warning-collector-handler ((self warning-collector))
   (lambda (&rest args)
@@ -230,7 +252,7 @@ without having to worry whether the package actually exists."
   (let ((report
           (with-standard-io-syntax
             (read stream))))
-    (assert (typep report 'warning-report))
+    (assert (report? report))
     report))
 
 (defun utopian:load-system (system &rest args &key &allow-other-keys)
@@ -252,4 +274,4 @@ To render a report of any warnings, load system ~a and evaluate:
     ~s"
             name
             :utopian/report
-            `(report-html-file ,name))))
+            `(utopian:report-html-file ,name))))
