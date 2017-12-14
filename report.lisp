@@ -2,6 +2,7 @@
 
 (defpackage :utopian/report
   (:use :cl :alexandria :serapeum :trivia :spinneret
+    :utopian
     :utopian/collect)
   (:shadowing-import-from :serapeum :@)
   (:export :report-html-file))
@@ -69,7 +70,7 @@
   (remove-if (lambda (w)
                (let ((sym
                        (delayed-symbol->symbol
-                        (warning-info.class w))))
+                        (warning-class w))))
                  ;; TODO For development.
                  (or (subtypep sym 'uninteresting-warning)
                      (some (op (subtypep sym _))
@@ -87,7 +88,7 @@
           (append (mapcar #'system-base systems)
                   (mapcar #'system-fasl-base systems))))
     (remove-if (lambda (w)
-                 (when-let (file (warning-info.source-file w))
+                 (when-let (file (warning-source-file w))
                    (some (op (uiop:subpathp file _))
                          system-bases)))
                warnings)))
@@ -111,11 +112,11 @@
                (ignore-types ignore-types)
                (ignore-systems ignore-systems)))))
    (local
-     (def by-source-file (assort warnings :test #'equal :key #'warning-info.source-file))
+     (def by-source-file (assort warnings :test #'equal :key #'warning-source-file))
      (def by-source-file (sort-by-severity by-source-file))
 
-     (def by-severity (assort warnings :key #'warning-info.severity))
-     (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-info.severity-level (first _)))))
+     (def by-severity (assort warnings :key #'warning-severity))
+     (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-severity-level (first _)))))
 
      (def by-source-file-id "by-source-file")
      (def by-severity-id "by-severity")
@@ -141,7 +142,7 @@ no warnings or style warnings."
              (style-warning-count 0)
              (note-count 0))
          (dolist (note notes)
-           (ecase-of severity (warning-info.severity note)
+           (ecase-of severity (warning-severity note)
              (:warning (incf warning-count))
              (:style-warning (incf style-warning-count))
              (:note (incf note-count))))
@@ -201,7 +202,7 @@ no warnings or style warnings."
              (:h1 "By file")
              (:ul :id by-source-file-id
                (do-each (file-warnings by-source-file)
-                 (let* ((file (warning-info.source-file (first file-warnings))))
+                 (let* ((file (warning-source-file (first file-warnings))))
                    (:details
                      (:summary
                        (quantify-notes file-warnings)
@@ -219,7 +220,7 @@ no warnings or style warnings."
              (:h1 "By severity")
              (:ul :id by-severity-id
                (do-each (warnings by-severity)
-                 (let ((severity (warning-info.severity (first warnings))))
+                 (let ((severity (warning-severity (first warnings))))
                    (:details
                      (:summary (fmt "~a ~a~:*~:p"
                                     (length warnings)
@@ -265,10 +266,10 @@ no warnings or style warnings."
   (nest
    (with-html)
    (local
-     (def file (warning-info.source-file warning))
-     (def class (warning-info.class warning))
-     (def string (trim-whitespace (warning-info.string warning)))
-     (def severity (warning-info.severity warning))
+     (def file (warning-source-file warning))
+     (def class (warning-class warning))
+     (def string (trim-whitespace (warning-string warning)))
+     (def severity (warning-severity warning))
 
      (defun show-string ()
        (:pre (:code string)))
@@ -307,14 +308,13 @@ no warnings or style warnings."
           (:small (:code (delayed-symbol-string class)))))))))
 
 (defun report-environment (report)
-  (flet ((th (string)
-           (with-html
+  (with-html
+    (flet ((th (string)
              (:th :scope "row" :style "text-align: left"
-               string))))
-    (destructuring-bind (&key lisp-env os-env &allow-other-keys)
-        report
-      (when (or lisp-env os-env)
-        (with-html
+               string)))
+      (destructuring-bind (&key lisp-env os-env &allow-other-keys)
+          report
+        (when (or lisp-env os-env)
           (:table
             (:caption "Environment")
             (doplist (k v lisp-env)

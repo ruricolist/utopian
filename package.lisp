@@ -7,4 +7,5 @@
    #:export-report
    #:import-report
    #:load-system
-   #:quickload))
+   #:quickload
+   #:system-report))

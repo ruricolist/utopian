@@ -1,7 +1,7 @@
 ;;;; utopian.lisp
 
 (defpackage :utopian/collect
-  (:use :cl)
+  (:use #:cl #:utopian)
   (:export
    #:export-report
    #:import-report
@@ -10,11 +10,11 @@
    #:delayed-symbol->symbol
    #:delayed-symbol.package
    #:delayed-symbol.name
-   #:warning-info.class
-   #:warning-info.source-file
-   #:warning-info.severity
-   #:warning-info.severity-level
-   #:warning-info.string
+   #:warning-class
+   #:warning-source-file
+   #:warning-severity
+   #:warning-severity-level
+   #:warning-string
    #:uninteresting-warning
    #:severity
    #:warning-info
@@ -42,7 +42,7 @@
   (coerce
    (stable-sort (copy-seq warnings)
                 #'>
-                :key #'warning-info.severity-level)
+                :key #'warning-severity-level)
    'list))
 
 (defstruct
@@ -75,7 +75,8 @@ without having to worry whether the package actually exists."
   ;; TODO Do better.
   (or *compile-file-pathname* *load-truename*))
 
-(defstruct (warning-info (:conc-name warning-info.))
+(defstruct (warning-info
+            (:conc-name warning-))
   ;; We do not store the condition itself to ensure that instances can
   ;; be written and read.
   (class (error "No class!") :type delayed-symbol :read-only t)
@@ -86,8 +87,8 @@ without having to worry whether the package actually exists."
    :type (or null pathname)
    :read-only t))
 
-(defmethod warning-info.severity-level ((self warning-info))
-  (severity-level (warning-info.severity self)))
+(defmethod warning-severity-level ((self warning-info))
+  (severity-level (warning-severity self)))
 
 (deftype string-designator ()
   '(or string symbol))
@@ -148,7 +149,8 @@ without having to worry whether the package actually exists."
     (with-open-file (out file
                          :direction :output
                          :if-exists :supersede)
-      (prin1 report out))))
+      (prin1 report out))
+    file))
 
 (defun reload-report (system &key (error t))
   (let* ((name (system-name system))
@@ -236,7 +238,7 @@ without having to worry whether the package actually exists."
     (setf (system-report system)
           (warning-collector-report collector system))
     (after-load-message system)
-    (values)))
+    (system-report-file system)))
 
 (defmacro with-warning-report ((&key (system (error "No system."))) &body body)
   `(call/warning-report
