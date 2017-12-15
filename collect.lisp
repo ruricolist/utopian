@@ -72,8 +72,9 @@ without having to worry whether the package actually exists."
         (error "No such symbol as ~a in ~a" name package))))
 
 (defun current-source-file ()
-  ;; TODO Do better.
-  (or *compile-file-pathname* *load-truename*))
+  (translate-logical-pathname
+   ;; TODO Do better.
+   (or *compile-file-pathname* *load-truename*)))
 
 (defstruct (warning-info
             (:conc-name warning-))
@@ -235,10 +236,13 @@ without having to worry whether the package actually exists."
     (handler-bind ((warning handler)
                    #+sbcl (sb-ext:compiler-note handler))
       (funcall fn))
-    (setf (system-report system)
-          (warning-collector-report collector system))
-    (after-load-message system)
-    (system-report-file system)))
+    (let ((report (warning-collector-report collector system)))
+      (setf (system-report system) report)
+      (after-load-message system (count-warnings report))
+      (system-report-file system))))
+
+(defun count-warnings (report)
+  (length (getf report :warnings)))
 
 (defmacro with-warning-report ((&key (system (error "No system."))) &body body)
   `(call/warning-report
@@ -269,11 +273,12 @@ without having to worry whether the package actually exists."
                       (list system)
                           :verbose t)))
 
-(defun after-load-message (system)
+(defun after-load-message (system warning-count)
   (let ((name (system-name system)))
-    (format t "~&System ~a has been loaded.
-To render a report of any warnings, load system ~a and evaluate:
-    ~s"
+    (format t "~&System ~a has been loaded with ~a warning~:p."
             name
-            :utopian/report
-            `(utopian:report-html-file ,name))))
+            warning-count)
+    (when (> warning-count 0)
+      (format t "To render a report, load system ~a and evaluate: ~s"
+              :utopian/report
+              `(utopian:report-html-file ,name)))))

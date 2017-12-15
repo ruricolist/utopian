@@ -84,13 +84,66 @@
   (asdf:apply-output-translations (system-base system)))
 
 (defun ignore-systems (warnings systems)
-  (let ((system-bases
-          (append (mapcar #'system-base systems)
-                  (mapcar #'system-fasl-base systems))))
+  (if (null systems) warnings
+      (let ((system-bases
+              (append (mapcar #'system-base systems)
+                      (mapcar #'system-fasl-base systems))))
+        (remove-if (lambda (w)
+                     (when-let (file (warning-source-file w))
+                       (some (lambda (base)
+                               (or (uiop:subpathp file base)
+                                   ;; TODO be more precise
+                                   (and (uiop:subpathp file (uiop:xdg-cache-home))
+                                        (string*= (namestring base)
+                                                  (namestring file)))))
+                             system-bases)))
+                   warnings))))
+
+(defun include-systems (warnings systems)
+  (if (null systems) warnings
+      (let ((system-bases
+              (append (mapcar #'system-base systems)
+                      (mapcar #'system-fasl-base systems))))
+        (filter (lambda (w)
+                  (let ((file (warning-source-file w)))
+                    (or (null file)
+                        (some (lambda (base)
+                                (or (uiop:subpathp file base)
+                                    ;; TODO be more precise
+                                    (and (uiop:subpathp file (uiop:xdg-cache-home))
+                                         (string*= (namestring base)
+                                                   (namestring file)))))
+                              system-bases))))
+                warnings))))
+
+(defun quicklisp-installed-systems ()
+  (~>> "quicklisp"
+       ql-dist:find-dist
+       ql-dist:installed-releases
+       (mappend #'ql-dist:provided-systems)
+       (mapcar #'ql-dist:name)))
+
+(defun find-system-or-dont (system)
+  (ignore-errors (asdf:find-system system nil)))
+
+(defun ignore-quicklisp-systems (warnings)
+  (let* ((base
+           (~> "quicklisp"
+               ql-dist:find-dist
+               ql-dist:base-directory))
+         (cache-base
+           (path-join uiop:*user-cache*
+                      (uiop:make-pathname*
+                       :directory
+                       (cons :relative
+                             (drop-while #'keywordp
+                                         (pathname-directory base)))))))
     (remove-if (lambda (w)
-                 (when-let (file (warning-source-file w))
-                   (some (op (uiop:subpathp file _))
-                         system-bases)))
+                 (let ((file
+                         (warning-source-file w)))
+                   (unless (null file)
+                     (or (uiop:subpathp file base)
+                         (uiop:subpathp file cache-base)))))
                warnings)))
 
 (defgeneric report-html (report &key &allow-other-keys))
@@ -102,15 +155,22 @@
   (apply #'report-html (system-report report) args))
 
 (defmethod report-html ((report list)
-                        &key ((:stream *html*) *html*) ignore-types ignore-systems
+                        &key ((:stream *html*) *html*) ignore-types
+                             ignore-systems include-systems
+                             (ignore-quicklisp-systems t)
                         &aux (*print-pretty* t))
   (nest
    (with-html)
    (destructuring-bind (&key system-name warnings &allow-other-keys) report)
-   (let ((warnings
-           (~> warnings
-               (ignore-types ignore-types)
-               (ignore-systems ignore-systems)))))
+   (let* ((warnings
+            (~> warnings
+                (ignore-types ignore-types)
+                (ignore-systems ignore-systems)
+                (include-systems include-systems)))
+          (warnings
+            (if ignore-quicklisp-systems
+                (ignore-quicklisp-systems warnings)
+                warnings))))
    (local
      (def by-source-file (assort warnings :test #'equal :key #'warning-source-file))
      (def by-source-file (sort-by-severity by-source-file))
