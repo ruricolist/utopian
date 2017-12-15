@@ -155,140 +155,193 @@
 (defmethod report-html ((report symbol) &rest args &key)
   (apply #'report-html (system-report report) args))
 
+(defclass report-renderer ()
+  ((ignore-types
+    :initarg :ignore-types
+    :type list)
+   (ignore-systems
+    :initarg :ignore-systems
+    :type list)
+   (include-systems
+    :initarg :include-systems
+    :type list)
+   (ignore-quicklisp-systems
+    :initarg :ignore-quicklisp-systems
+    :type boolean)
+   (report
+    :initarg :report
+    :type list)
+   (stream
+    :initarg :stream
+    :reader stream-of
+    :type stream)
+   (render-file-links
+    :type boolean
+    :reader render-file-links?)
+   (system-name
+    :type string-designator
+    :initarg :system-name
+    :initarg :system
+    :reader system-name))
+  (:default-initargs
+   :ignore-types nil
+   :ignore-systems nil
+   :ignore-quicklisp-systems t
+   :include-systems nil
+   :report (required-argument :report)
+   :stream *html*))
+
+(defmethod initialize-instance :after ((self report-renderer) &key)
+  (with-slots (render-file-links report system-name) self
+    (setf render-file-links
+          (equal (machine-instance)
+                 (~> report
+                     (getf :lisp-env)
+                     (getf :machine-instance)))
+
+          system-name (getf report :system-name))))
+
+(defmethod warnings-to-render ((self report-renderer))
+  (with-slots (ignore-types ignore-systems include-systems
+               ignore-quicklisp-systems report)
+      self
+    (let* ((warnings
+             (~> (getf report :warnings)
+                 (ignore-types ignore-types)
+                 (ignore-systems ignore-systems)
+                 (include-systems include-systems))))
+      (if ignore-quicklisp-systems
+          (ignore-quicklisp-systems warnings report)
+          warnings))))
+
 (defmethod report-html ((report list)
-                        &key ((:stream *html*) *html*) ignore-types
-                             ignore-systems include-systems
-                             (ignore-quicklisp-systems t)
+                        &rest args
+                        &key &allow-other-keys
                         &aux (*print-pretty* t))
-  (nest
-   (with-html)
-   (destructuring-bind (&key system-name warnings &allow-other-keys) report)
-   (let* ((warnings
-            (~> warnings
-                (ignore-types ignore-types)
-                (ignore-systems ignore-systems)
-                (include-systems include-systems)))
-          (warnings
-            (if ignore-quicklisp-systems
-                (ignore-quicklisp-systems warnings report)
-                warnings))))
-   (local
-     (def by-source-file (assort warnings :test #'equal :key #'warning-source-file))
-     (def by-source-file (sort-by-severity by-source-file))
+  (let* ((renderer (apply #'make 'report-renderer
+                          :report report
+                          args))
+         (system-name (system-name renderer))
+         (warnings (warnings-to-render renderer))
+         (*html* (stream-of renderer)))
+    (with-html
+      (local
+        (def by-source-file (assort warnings :test #'equal :key #'warning-source-file))
+        (def by-source-file (sort-by-severity by-source-file))
 
-     (def by-severity (assort warnings :key #'warning-severity))
-     (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-severity-level (first _)))))
+        (def by-severity (assort warnings :key #'warning-severity))
+        (def by-severity (dsu-sort (copy-seq by-severity) #'> :key (op (warning-severity-level (first _)))))
 
-     (def by-source-file-id "by-source-file")
-     (def by-severity-id "by-severity")
-     (def by-source-file-hash (fmt "#~a" by-source-file-id))
-     (def by-severity-hash (fmt "#~a" by-severity-id))
+        (def by-source-file-id "by-source-file")
+        (def by-severity-id "by-severity")
+        (def by-source-file-hash (fmt "#~a" by-source-file-id))
+        (def by-severity-hash (fmt "#~a" by-severity-id))
 
-     (defun sort-by-severity (notes)
-       "First all the files with warnings, then all the files with no
+        (defun sort-by-severity (notes)
+          "First all the files with warnings, then all the files with no
 warnings but with style warnings, then all the files with notes, but
 no warnings or style warnings."
-       (dsu-sort (copy-seq notes)
-                 (lambda (xs ys)
-                   (nlet rec ((xs xs)
-                              (ys ys))
-                     (if (or (endp xs) (endp ys)) nil
-                         (or (> (first xs) (first ys))
-                             (and (= (first xs) (first ys))
-                                  (rec (rest xs) (rest ys)))))))
-                 :key (op (multiple-value-list (count-severities _)))))
+          (dsu-sort (copy-seq notes)
+                    (lambda (xs ys)
+                      (nlet rec ((xs xs)
+                                 (ys ys))
+                        (if (or (endp xs) (endp ys)) nil
+                            (or (> (first xs) (first ys))
+                                (and (= (first xs) (first ys))
+                                     (rec (rest xs) (rest ys)))))))
+                    :key (op (multiple-value-list (count-severities _)))))
 
-     (defun count-severities (notes)
-       (let ((warning-count 0)
-             (style-warning-count 0)
-             (note-count 0))
-         (dolist (note notes)
-           (ecase-of severity (warning-severity note)
-             (:warning (incf warning-count))
-             (:style-warning (incf style-warning-count))
-             (:note (incf note-count))))
-         (values warning-count style-warning-count note-count)))
+        (defun count-severities (notes)
+          (let ((warning-count 0)
+                (style-warning-count 0)
+                (note-count 0))
+            (dolist (note notes)
+              (ecase-of severity (warning-severity note)
+                (:warning (incf warning-count))
+                (:style-warning (incf style-warning-count))
+                (:note (incf note-count))))
+            (values warning-count style-warning-count note-count)))
 
-     (defun quantify-notes (notes)
-       (multiple-value-bind (warning-count style-warning-count note-count)
-           (count-severities notes)
-         ;; TODO Do better.
-         (with-output-to-string (s)
-           (when (plusp warning-count)
-             (format s "~a warning~:p" warning-count))
+        (defun quantify-notes (notes)
+          (multiple-value-bind (warning-count style-warning-count note-count)
+              (count-severities notes)
+            ;; TODO Do better.
+            (with-output-to-string (s)
+              (when (plusp warning-count)
+                (format s "~a warning~:p" warning-count))
 
-           (when (plusp style-warning-count)
-             (when (plusp warning-count)
-               ;; There are warnings.
-               (if (plusp note-count)
-                   ;; There are also notes, so this is item 2 of 3.
-                   (format s ", ")
-                   (format s " and ")))
-             (format s "~a style warning~:p" style-warning-count))
+              (when (plusp style-warning-count)
+                (when (plusp warning-count)
+                  ;; There are warnings.
+                  (if (plusp note-count)
+                      ;; There are also notes, so this is item 2 of 3.
+                      (format s ", ")
+                      (format s " and ")))
+                (format s "~a style warning~:p" style-warning-count))
 
-           (when (plusp note-count)
-             (when (plusp (min style-warning-count warning-count))
-               ;; Both nonzero.
-               (format s ","))
-             (when (plusp (logior style-warning-count warning-count))
-               ;; Either one nonzero.
-               (format s " and "))
-             (format s "~a note~:p" note-count)))))
+              (when (plusp note-count)
+                (when (plusp (min style-warning-count warning-count))
+                  ;; Both nonzero.
+                  (format s ","))
+                (when (plusp (logior style-warning-count warning-count))
+                  ;; Either one nonzero.
+                  (format s " and "))
+                (format s "~a note~:p" note-count)))))
 
-     (:doctype)
-     (:html
-       (:head
-         (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
-         (:title ("Report for system ~s" system-name))
-         (:style (:raw html-report-css)))
+        (:doctype)
+        (:html
+          (:head
+            (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
+            (:title ("Report for system ~s" system-name))
+            (:style (:raw html-report-css)))
 
-       (:body
-         (:div :id "environment"
-           (report-environment report))
+          (:body
+            (:div :id "environment"
+              (report-environment report))
 
-         (:div
+            (:div
 
-           (when (or by-source-file by-severity)
-             (:ul
-               (:li (:a :href by-source-file-hash "By file"))
-               (:li (:a :href by-severity-hash "By severity"))))
+              (when (or by-source-file by-severity)
+                (:ul
+                  (:li (:a :href by-source-file-hash "By file"))
+                  (:li (:a :href by-severity-hash "By severity"))))
 
-           (:p
-             (when warnings
-               (fmt "There are ~a in ~a file~:p"
-                    (quantify-notes warnings)
-                    (length by-source-file))))
+              (:p
+                (when warnings
+                  (fmt "There are ~a in ~a file~:p"
+                       (quantify-notes warnings)
+                       (length by-source-file))))
 
-           (when by-source-file
-             (:h1 "By file")
-             (:ul :id by-source-file-id
-               (do-each (file-warnings by-source-file)
-                 (let* ((file (warning-source-file (first file-warnings))))
-                   (:details
-                     (:summary
-                       (quantify-notes file-warnings)
-                       " in "
-                       (if file
-                           ("file ~a"
-                            (remove-homedir file))
-                           "no file")
-                       (:span.pathname file))
-                     (:ul.list-group
-                      (dolist (warning file-warnings)
-                        (render-warning warning))))))))
+              (when by-source-file
+                (:h1 "By file")
+                (:ul :id by-source-file-id
+                  (do-each (file-warnings by-source-file)
+                    (let* ((file (warning-source-file (first file-warnings))))
+                      (:details
+                        (:summary
+                          (quantify-notes file-warnings)
+                          " in "
+                          (if file
+                              ("file ~a"
+                               (remove-homedir file))
+                              "no file")
+                          (:span.pathname file))
+                        (:ul.list-group
+                         (dolist (warning file-warnings)
+                           (render-warning renderer warning))))))))
 
-           (when by-severity
-             (:h1 "By severity")
-             (:ul :id by-severity-id
-               (do-each (warnings by-severity)
-                 (let ((severity (warning-severity (first warnings))))
-                   (:details
-                     (:summary (fmt "~a ~a~:*~:p"
-                                    (length warnings)
-                                    (severity-title severity)))
-                     (:ul.list-group
-                      (dolist (warning warnings)
-                        (render-warning warning))))))))))))))
+              (when by-severity
+                (:h1 "By severity")
+                (:ul :id by-severity-id
+                  (do-each (warnings by-severity)
+                    (let ((severity (warning-severity (first warnings))))
+                      (:details
+                        (:summary (fmt "~a ~a~:*~:p"
+                                       (length warnings)
+                                       (severity-title severity)))
+                        (:ul.list-group
+                         (dolist (warning warnings)
+                           (render-warning renderer warning)))))))))))))))
 
 (defun severity-title (sev)
   (ecase-of severity sev
@@ -323,51 +376,51 @@ no warnings or style warnings."
             file))
       file))
 
-(defun render-warning (warning &optional (*html* *html*))
+(defmethod render-warning ((self report-renderer) warning)
   (check-type warning warning-info)
-  (nest
-   (with-html)
-   (local
-     (def file (warning-source-file warning))
-     (def class (warning-class warning))
-     (def string (trim-whitespace (warning-string warning)))
-     (def severity (warning-severity warning))
+  (let ((render-file-links? (render-file-links? self)))
+    (with-html
+      (local
+        (def file (warning-source-file warning))
+        (def class (warning-class warning))
+        (def string (trim-whitespace (warning-string warning)))
+        (def severity (warning-severity warning))
 
-     (defun show-string ()
-       (:pre (:code string)))
+        (defun show-string ()
+          (:pre (:code string)))
 
-     (defun maybe-link ()
-       (if file
-           (let ((url (pathname-file-url file)))
-             (:a.file-link
-              :href url
-              :title (fmt "In ~a" (remove-homedir file))
+        (defun maybe-link ()
+          (if (and render-file-links? file)
+              (let ((url (pathname-file-url file)))
+                (:a.file-link
+                 :href url
+                 :title (fmt "In ~a" (remove-homedir file))
+                 (show-string)))
               (show-string)))
-           (show-string)))
 
-     (defun delayed-symbol-string (class)
-       (let ((package (delayed-symbol.package class))
-             (name (delayed-symbol.name class)))
-         (cond ((member package '("CL" "COMMON-LISP") :test #'equal)
-                name)
-               ((equal package "KEYWORD")
-                (fmt ":~a" name))
-               (t (fmt "~a:~a" package name)))))
+        (defun delayed-symbol-string (class)
+          (let ((package (delayed-symbol.package class))
+                (name (delayed-symbol.name class)))
+            (cond ((member package '("CL" "COMMON-LISP") :test #'equal)
+                   name)
+                  ((equal package "KEYWORD")
+                   (fmt ":~a" name))
+                  (t (fmt "~a:~a" package name)))))
 
-     (defun teaser (string)
-       (~> string
-           collapse-whitespace
-           (ellipsize 60)))
+        (defun teaser (string)
+          (~> string
+              collapse-whitespace
+              (ellipsize 60)))
 
-     (:li.warning
-      :class (severity-class severity)
-      (:figure
-        (if (> (length string) 80)
-            (:details (:summary (:code (teaser string)))
-              (maybe-link))
-            (maybe-link))
-        (:figcaption
-          (:small (:code (delayed-symbol-string class)))))))))
+        (:li.warning
+         :class (severity-class severity)
+         (:figure
+           (if (> (length string) 80)
+               (:details (:summary (:code (teaser string)))
+                 (maybe-link))
+               (maybe-link))
+           (:figcaption
+             (:small (:code (delayed-symbol-string class))))))))))
 
 (defun report-environment (report)
   (with-html
