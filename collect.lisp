@@ -224,7 +224,7 @@ actually depending on Quicklisp."
   `(or uiop:compile-warned-warning))
 
 (defparameter *useless-warning-types*
-  '(("c2mop" . "defmethod-without-generic-function")
+  '(("closer-mop" . "defmethod-without-generic-function")
     ("asdf/parse-defsystem" . "bad-system-name")))
 
 (defun warning-useless? (warning)
@@ -232,9 +232,10 @@ actually depending on Quicklisp."
          (name (class-name class)))
     (and name
          (symbolp name)
-         (let ((package (symbol-package name))
-               (name (symbol-name name)))
-           (find (cons package name)
+         (let* ((package (package-name (symbol-package name)))
+                (name (symbol-name name))
+                (key (cons package name)))
+           (find key
                  *useless-warning-types*
                  :test #'equalp)))))
 
