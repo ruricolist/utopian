@@ -126,25 +126,22 @@
 (defun find-system-or-dont (system)
   (ignore-errors (asdf:find-system system nil)))
 
-(defun ignore-quicklisp-systems (warnings)
-  (let* ((base
-           (~> "quicklisp"
-               ql-dist:find-dist
-               ql-dist:base-directory))
-         (cache-base
-           (path-join uiop:*user-cache*
-                      (uiop:make-pathname*
-                       :directory
-                       (cons :relative
-                             (drop-while #'keywordp
-                                         (pathname-directory base)))))))
-    (remove-if (lambda (w)
-                 (let ((file
-                         (warning-source-file w)))
-                   (unless (null file)
-                     (or (uiop:subpathp file base)
-                         (uiop:subpathp file cache-base)))))
-               warnings)))
+(defun ignore-quicklisp-systems (warnings
+                                 report)
+  (destructuring-bind (&key quicklisp-dist-root
+                            quicklisp-dist-cache-root
+                            &allow-other-keys)
+      report
+    (if (and quicklisp-dist-root
+             quicklisp-dist-cache-root)
+        (remove-if (lambda (w)
+                     (let ((file
+                             (warning-source-file w)))
+                       (unless (null file)
+                         (or (uiop:subpathp file quicklisp-dist-root)
+                             (uiop:subpathp file quicklisp-dist-cache-root)))))
+                   warnings)
+        warnings)))
 
 (defgeneric report-html (report &key &allow-other-keys))
 
@@ -169,7 +166,7 @@
                 (include-systems include-systems)))
           (warnings
             (if ignore-quicklisp-systems
-                (ignore-quicklisp-systems warnings)
+                (ignore-quicklisp-systems warnings report)
                 warnings))))
    (local
      (def by-source-file (assort warnings :test #'equal :key #'warning-source-file))

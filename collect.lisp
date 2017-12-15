@@ -129,11 +129,37 @@ without having to worry whether the package actually exists."
    :hosttype (uiop:getenv "HOSTTYPE")
    :lang (uiop:getenv "LANG")))
 
+(defun quicklisp-dist-root ()
+  "Get the directory of the Quicklisp dist, if there is one, without
+actually depending on Quicklisp."
+  (let1 ql-dist (find-package :ql-dist)
+    (and ql-dist
+         (let1 dist
+             (uiop:symbol-call ql-dist :find-dist "quicklisp")
+           (and dist
+                (uiop:symbol-call ql-dist :base-directory
+                                  dist))))))
+
+(defun quicklisp-dist-cache-root ()
+  "Get the root directory for Quicklisp fasls."
+  (let1 qroot (quicklisp-dist-root)
+    (when qroot
+      (uiop:merge-pathnames*
+       (uiop:make-pathname*
+        :directory
+        (cons :relative
+              (loop for tail on (pathname-directory qroot)
+                    while (keywordp (first tail))
+                    finally (return tail))))
+       uiop:*user-cache*))))
+
 (defun make-warning-report (system warnings)
   (list :system-name (system-name system)
         :warnings (sort-warnings (reverse warnings))
         :lisp-env (lisp-env-plist)
-        :os-env (os-env-plist)))
+        :os-env (os-env-plist)
+        :quicklisp-dist-root (quicklisp-dist-root)
+        :quicklisp-dist-cache-root (quicklisp-dist-cache-root)))
 
 (defun reports-dir ()
   (ensure-directories-exist
@@ -200,21 +226,6 @@ without having to worry whether the package actually exists."
 
 (deftype uninteresting-warning ()
   `(or uiop:compile-warned-warning))
-
-(defparameter *useless-warning-types*
-  '(("c2mop" . "defmethod-without-generic-function")
-    ("asdf/parse-defsystem" . "bad-system-name")))
-
-(defun warning-useless? (warning)
-  (let* ((class (class-of warning))
-         (name (class-name class)))
-    (and name
-         (symbolp name)
-         (let ((package (symbol-package name))
-               (name (symbol-name name)))
-           (find (cons package name)
-                 *useless-warning-types*
-                 :test #'equalp)))))
 
 (defparameter *useless-warning-types*
   '(("c2mop" . "defmethod-without-generic-function")
@@ -312,11 +323,12 @@ without having to worry whether the package actually exists."
             name
             warning-count)
     (when (> warning-count 0)
-      (format t "To render a report, load system ~a and evaluate: ~s"
+      (format t "~%To render a report, load system ~a and evaluate: ~s"
               :utopian/report
               `(utopian:report-html-file ,name)))))
 
 (declaim (notinline report-html-file))
-(defun report-html-file (&rest args)
-  (declare (ignore args))
-  (error "The utopian/report system has not been loaded yet."))
+(unless (fboundp 'report-html-file)
+  (defun report-html-file (&rest args)
+    (declare (ignore args))
+    (error "The utopian/report system has not been loaded yet.")))
