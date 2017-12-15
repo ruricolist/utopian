@@ -193,15 +193,27 @@ without having to worry whether the package actually exists."
     :reader warning-collector-warnings)))
 
 (deftype uninteresting-warning ()
-  `(or uiop:compile-warned-warning
-       ,@(remove-if-not #'symbolp uiop:*usual-uninteresting-conditions*)
-       (satisfies uiop-finds-uninteresting?)))
+  `(or uiop:compile-warned-warning))
 
-(defun uiop-finds-uninteresting? (c)
-  (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*))
+(defparameter *useless-warning-types*
+  '(("c2mop" . "defmethod-without-generic-function")
+    ("asdf/parse-defsystem" . "bad-system-name")))
+
+(defun warning-useless? (warning)
+  (let* ((class (class-of warning))
+         (name (class-name class)))
+    (and name
+         (symbolp name)
+         (let ((package (symbol-package name))
+               (name (symbol-name name)))
+           (find (cons package name)
+                 *useless-warning-types*
+                 :test #'equalp)))))
 
 (defun uninteresting? (c)
-  (or (typep c 'uninteresting-warning)))
+  (or (typep c 'uninteresting-warning)
+      (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*)
+      (warning-useless? c)))
 
 (defgeneric collect-warning (self condition)
   (:method :around (self condition)
