@@ -3,10 +3,6 @@
 (defpackage :utopian/collect
   (:use #:cl #:utopian)
   (:export
-   #:export-report
-   #:import-report
-   #:load-system
-   #:quickload
    #:delayed-symbol->symbol
    #:delayed-symbol.package
    #:delayed-symbol.name
@@ -294,22 +290,42 @@ actually depending on Quicklisp."
       ,@body)
     ,system))
 
-(defun utopian:export-report (report stream)
-  (with-standard-io-syntax
-    (prin1 report stream)))
+(defgeneric write-report (report dest)
+  (:method ((system symbol) dest)
+    (write-report (system-report system) dest))
+  (:method ((system string) dest)
+    (write-report (system-report system) dest))
+  (:method (report (dest string))
+    (let1 p (uiop:ensure-pathname dest :want-pathname t)
+      (write-report report p)))
+  (:method ((report list) (stream stream))
+    (with-standard-io-syntax
+      (prin1 report stream)))
+  (:method ((report list) (file pathname))
+    (with-open-file (stream file
+                            :direction :output
+                            :if-exists :error-delete)
+      (write-report report stream))))
 
-(defun utopian:import-report (stream)
-  (let ((report
-          (with-standard-io-syntax
-            (read stream))))
-    (assert (report? report))
-    report))
+(defgeneric read-report (source)
+  (:method ((stream stream))
+    (let ((report
+            (with-standard-io-syntax
+              (read stream))))
+      (assert (report? report))
+      report))
+  (:method ((file pathname))
+    (with-open-file (stream file :direction :input)
+      (read-report stream)))
+  (:method ((file string))
+    (let1 p (uiop:ensure-pathname file :want-pathname t)
+      (read-report p))))
 
-(defun utopian:load-system (system &rest args &key &allow-other-keys)
+(defun load-system (system &rest args &key &allow-other-keys)
   (with-warning-report (:system (string system))
     (apply #'asdf:load-system system args)))
 
-(defun utopian:quickload (system)
+(defun quickload (system)
   (unless (find-package :quicklisp)
     (error "Quicklisp is not installed in this Lisp."))
   (with-warning-report (:system (string system))
@@ -325,7 +341,7 @@ actually depending on Quicklisp."
     (when (> warning-count 0)
       (format t "~%To render a report, load system ~a and evaluate: ~s"
               :utopian/report
-              `(utopian:report-html-file ,name)))))
+              `(report-html-file ,name)))))
 
 (declaim (notinline report-html-file))
 (unless (fboundp 'report-html-file)

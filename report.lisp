@@ -145,6 +145,10 @@
 
 (defgeneric report-html (report &key &allow-other-keys))
 
+(defmethod report-html ((file pathname) &rest args &key)
+  (let ((report (read-report file)))
+    (apply #'report-html report args)))
+
 (defmethod report-html ((report string) &rest args &key)
   (apply #'report-html (system-report report) args))
 
@@ -299,15 +303,16 @@ no warnings or style warnings."
     (:style-warning "severity-style-warning")))
 
 (defun pathname-file-url (file)
-  (let ((file (truename file)))
-    (fmt "file:///~@[~a:/~]~{~a/~}~a~@[.~a~]"
-         (and (uiop:os-windows-p)
-              (pathname-device file))
-         (mapcar #'quri:url-encode
-                 (drop-while #'keywordp
-                             (pathname-directory file)))
-         (quri:url-encode (pathname-name file))
-         (quri:url-encode (pathname-type file)))))
+  (if (not (uiop:file-exists-p file)) "#"
+      (let ((file (truename file)))
+        (fmt "file:///~@[~a:/~]~{~a/~}~a~@[.~a~]"
+             (and (uiop:os-windows-p)
+                  (pathname-device file))
+             (mapcar #'quri:url-encode
+                     (drop-while #'keywordp
+                                 (pathname-directory file)))
+             (quri:url-encode (pathname-name file))
+             (quri:url-encode (pathname-type file))))))
 
 (defun remove-homedir (file)
   (if (pathnamep file)

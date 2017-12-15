@@ -4,8 +4,8 @@
   (:use)
   (:export
    #:report-html-file
-   #:export-report
-   #:import-report
+   #:write-report
+   #:read-report
    #:load-system
    #:quickload
    #:system-report))
