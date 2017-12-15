@@ -210,6 +210,21 @@ without having to worry whether the package actually exists."
                  *useless-warning-types*
                  :test #'equalp)))))
 
+(defparameter *useless-warning-types*
+  '(("c2mop" . "defmethod-without-generic-function")
+    ("asdf/parse-defsystem" . "bad-system-name")))
+
+(defun warning-useless? (warning)
+  (let* ((class (class-of warning))
+         (name (class-name class)))
+    (and name
+         (symbolp name)
+         (let ((package (symbol-package name))
+               (name (symbol-name name)))
+           (find (cons package name)
+                 *useless-warning-types*
+                 :test #'equalp)))))
+
 (defun uninteresting? (c)
   (or (typep c 'uninteresting-warning)
       (uiop:match-any-condition-p c uiop:*usual-uninteresting-conditions*)
