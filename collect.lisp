@@ -72,9 +72,11 @@ without having to worry whether the package actually exists."
         (error "No such symbol as ~a in ~a" name package))))
 
 (defun current-source-file ()
-  (translate-logical-pathname
-   ;; TODO Do better.
-   (or *compile-file-pathname* *load-truename*)))
+  (let ((file
+          ;; TODO Do better.
+          (or *compile-file-pathname* *load-truename*)))
+    (and file
+         (translate-logical-pathname file))))
 
 (defstruct (warning-info
             (:conc-name warning-))
@@ -309,3 +311,8 @@ without having to worry whether the package actually exists."
       (format t "To render a report, load system ~a and evaluate: ~s"
               :utopian/report
               `(utopian:report-html-file ,name)))))
+
+(declaim (notinline report-html-file))
+(defun report-html-file (&rest args)
+  (declare (ignore args))
+  (error "The utopian/report system has not been loaded yet."))
