@@ -24,6 +24,10 @@
 
 ;;; "utopian" goes here. Hacks and glory await!
 
+(defmacro let1 (var expr &body body)
+  `(let ((,var ,expr))
+     ,@body))
+
 (deftype severity ()
   '(member :note :style-warning :warning))
 
