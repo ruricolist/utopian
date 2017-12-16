@@ -121,6 +121,7 @@ without having to worry whether the package actually exists."
 (defun os-env-plist ()
   (list
    :path (uiop:getenv "PATH")
+   :ld-library-path (uiop:getenv "LD_LIBRARY_PATH")
    :ostype (uiop:getenv "OSTYPE")
    :hosttype (uiop:getenv "HOSTTYPE")
    :lang (uiop:getenv "LANG")))
