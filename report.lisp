@@ -77,6 +77,11 @@
                            types))))
              warnings))
 
+(defun ignore-regex (warnings regex)
+  (let ((scanner (ppcre:create-scanner regex)))
+    (remove-if (op (ppcre:scan scanner (warning-string _)))
+               warnings)))
+
 (defun system-base (system)
   (asdf:system-relative-pathname system ""))
 
@@ -168,6 +173,8 @@
    (ignore-quicklisp-systems
     :initarg :ignore-quicklisp-systems
     :type boolean)
+   (ignore-regex
+    :type list)
    (report
     :initarg :report
     :type list)
@@ -191,22 +198,36 @@
    :report (required-argument :report)
    :stream *html*))
 
-(defmethod initialize-instance :after ((self report-renderer) &key)
-  (with-slots (render-file-links report system-name) self
+(defmethod initialize-instance :after ((self report-renderer)
+                                       &key ignore-regexes)
+  (with-slots (render-file-links report system-name ignore-regex)
+      self
     (setf render-file-links
           (equal (machine-instance)
                  (~> report
                      (getf :lisp-env)
                      (getf :machine-instance)))
 
-          system-name (getf report :system-name))))
+          system-name (getf report :system-name)
+
+          ignore-regex
+          (ppcre:create-scanner
+           (cond ((null ignore-regexes)
+                  (constantly nil))
+                 ((single ignore-regexes)
+                  (car ignore-regexes))
+                 (t `(:alternation
+                      ,@(mapcar (op `(:regex ,_))
+                                ignore-regexes))))))))
 
 (defmethod warnings-to-render ((self report-renderer))
   (with-slots (ignore-types ignore-systems include-systems
-               ignore-quicklisp-systems report)
+               ignore-quicklisp-systems report
+               ignore-regex)
       self
     (let* ((warnings
              (~> (getf report :warnings)
+                 (ignore-regex ignore-regex)
                  (ignore-types ignore-types)
                  (ignore-systems ignore-systems)
                  (include-systems include-systems))))

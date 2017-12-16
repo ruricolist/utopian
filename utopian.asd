@@ -23,6 +23,8 @@
                "lass"
                "parenscript"
                ;; For warnings.
-               "closer-mop")
+               "closer-mop"
+               ;; For ignore regexes.
+               "cl-ppcre")
   :serial t
   :components ((:file "report")))
