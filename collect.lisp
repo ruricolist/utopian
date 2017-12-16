@@ -305,7 +305,7 @@ actually depending on Quicklisp."
   (:method ((report list) (file pathname))
     (with-open-file (stream file
                             :direction :output
-                            :if-exists :error-delete)
+                            :if-exists :error)
       (write-report report stream))))
 
 (defgeneric read-report (source)
