@@ -273,7 +273,10 @@ actually depending on Quicklisp."
 
 (defun call/warning-report (fn system)
   (let* ((collector (make-warning-collector))
-         (handler (warning-collector-handler collector)))
+         (handler (warning-collector-handler collector))
+         ;; No redundant warnings.
+         (asdf:*compile-file-failure-behaviour* :ignore)
+         (asdf:*compile-file-warnings-behaviour* :ignore))
     (handler-bind ((warning handler)
                    #+sbcl (sb-ext:compiler-note handler))
       (funcall fn))
