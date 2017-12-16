@@ -439,7 +439,7 @@ no warnings or style warnings."
                     (th (fmt "~@(~a~)" (substitute #\Space #\- (string k))))
                     (:td v)))))
             (doplist (k v os-env)
-              (when v
+              (unless (emptyp v)
                 (:tr (th (fmt "$~:@(~a~)" k))
                   (:td :style "font-family: monospace"
                     v))))))))))
