@@ -161,7 +161,8 @@ actually depending on Quicklisp."
 (defun reports-dir ()
   (ensure-directories-exist
    (uiop:merge-pathnames*
-    "utopian/systems/"
+    (format nil "utopian/systems/~a/"
+            (uiop:implementation-identifier))
     uiop:*temporary-directory*)))
 
 (defun escape-system-name (name)

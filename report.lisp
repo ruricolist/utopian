@@ -174,7 +174,7 @@
     :initarg :ignore-quicklisp-systems
     :type boolean)
    (ignore-regex
-    :type list)
+    :type function)
    (report
     :initarg :report
     :type list)
