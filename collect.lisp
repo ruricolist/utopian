@@ -20,6 +20,22 @@
 
 ;;; "utopian" goes here. Hacks and glory await!
 
+(defparameter *lisp-env-queries*
+  '(lisp-implementation-type
+    lisp-implementation-version
+    machine-instance
+    machine-type
+    machine-version
+    short-site-name
+    long-site-name))
+
+(defparameter *environment-variables*
+  '("PATH"
+    "LD_LIBRARY_PATH"
+    "OSTYPE"
+    "HOSTTYPE"
+    "LANG"))
+
 (defmacro let1 (var expr &body body)
   `(let ((,var ,expr))
      ,@body))
@@ -107,24 +123,14 @@ without having to worry whether the package actually exists."
        (asdf:component-name system)
        system)))
 
-(defun lisp-env-plist ()
+(defun lisp-env-info ()
   "Gather Lisp-supplied environment info."
-  (list
-   :lisp-implementation-type (lisp-implementation-type)
-   :lisp-implementation-version (lisp-implementation-version)
-   :machine-instance (machine-instance)
-   :machine-type (machine-type)
-   :machine-version (machine-version)
-   :short-site-name (short-site-name)
-   :long-site-name (long-site-name)))
+  (loop for fn in *lisp-env-queries*
+        collect (cons fn (funcall fn))))
 
-(defun os-env-plist ()
-  (list
-   :path (uiop:getenv "PATH")
-   :ld-library-path (uiop:getenv "LD_LIBRARY_PATH")
-   :ostype (uiop:getenv "OSTYPE")
-   :hosttype (uiop:getenv "HOSTTYPE")
-   :lang (uiop:getenv "LANG")))
+(defun os-env-info ()
+  (loop for var in *environment-variables*
+        collect (cons var (uiop:getenv var))))
 
 (defun quicklisp-dist-root ()
   "Get the directory of the Quicklisp dist, if there is one, without
@@ -153,7 +159,7 @@ actually depending on Quicklisp."
 (defun make-warning-report (system warnings)
   (list :system-name (system-name system)
         :warnings (sort-warnings (reverse warnings))
-        :lisp-env (lisp-env-plist)
+        :lisp-env (lisp-env-info)
         :os-env (os-env-plist)
         :quicklisp-dist-root (quicklisp-dist-root)
         :quicklisp-dist-cache-root (quicklisp-dist-cache-root)))

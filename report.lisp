@@ -135,7 +135,7 @@
                                  report)
   (destructuring-bind (&key quicklisp-dist-root
                             quicklisp-dist-cache-root
-                            &allow-other-keys)
+                       &allow-other-keys)
       report
     (if (and quicklisp-dist-root
              quicklisp-dist-cache-root)
@@ -453,13 +453,13 @@ no warnings or style warnings."
         (when (or lisp-env os-env)
           (:table
             (:caption "Environment")
-            (doplist (k v lisp-env)
+            (loop for (k . v) in lisp-env do
               (when v
                 (unless (equal v "unspecified")
                   (:tr
                     (th (fmt "~@(~a~)" (substitute #\Space #\- (string k))))
                     (:td v)))))
-            (doplist (k v os-env)
+            (loop for (k . v) in os-env do
               (unless (emptyp v)
                 (:tr (th (fmt "$~:@(~a~)" k))
                   (:td :style "font-family: monospace"
