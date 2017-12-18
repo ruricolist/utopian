@@ -23,18 +23,47 @@
 (defparameter *lisp-env-queries*
   '(lisp-implementation-type
     lisp-implementation-version
-    machine-instance
-    machine-type
-    machine-version
+    ;; machine-instance
+    uiop/os:hostname
+    uiop/os:operating-system
+    ;; machine-type
+    architecture
+    ;; machine-version
     short-site-name
     long-site-name))
 
 (defparameter *environment-variables*
-  '("PATH"
+  '(
+    ;; Glibc standard environment.
+    "HOME"
+    "LOGNAME"
+    "PATH"
+    "TERM"
+    "TZ"
+    "LANG"
+    "LC_ALL"
+    "LC_COLLATE"
+    "LC_CTYPE"
+    "LC_MESSAGES"
+    "LC_MONETARY"
+    "LC_NUMERIC"
+    "LC_TIME"
+    "NLSPATH"
+    "_POSIX_OPTION_ORDER"
+    ;; Etc.
     "LD_LIBRARY_PATH"
     "OSTYPE"
     "HOSTTYPE"
-    "LANG"))
+    ;; Lisp-specific.
+    #+sbcl "SBCL_HOME"
+    #+ccl "CCL_DEFAULT_DIRECTORY"
+    ))
+
+(defun architecture ()
+  (multiple-value-bind (short long)
+      (uiop/os:architecture)
+    (declare (ignore short))
+    long))
 
 (defmacro let1 (var expr &body body)
   `(let ((,var ,expr))
@@ -126,11 +155,15 @@ without having to worry whether the package actually exists."
 (defun lisp-env-info ()
   "Gather Lisp-supplied environment info."
   (loop for fn in *lisp-env-queries*
-        collect (cons fn (funcall fn))))
+        for val = (funcall fn)
+        unless (equal val "unspecified")
+          collect (cons fn val)))
 
 (defun os-env-info ()
   (loop for var in *environment-variables*
-        collect (cons var (uiop:getenv var))))
+        for val = (uiop:getenvp var)
+        when val
+          collect (cons var val)))
 
 (defun quicklisp-dist-root ()
   "Get the directory of the Quicklisp dist, if there is one, without
