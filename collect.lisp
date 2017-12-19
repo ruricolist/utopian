@@ -324,11 +324,17 @@ actually depending on Quicklisp."
       (funcall fn))
     (let ((report (warning-collector-report collector system)))
       (setf (system-report system) report)
-      (after-load-message system (count-warnings report))
+      (after-load-message system (count-report-warnings report))
       (system-report-file system))))
 
-(defun count-warnings (report)
+(defun count-report-warnings (report)
   (length (getf report :warnings)))
+
+(defun count-report-files (report)
+  (let* ((warnings (getf report :warnings))
+         (files (mapcar #'warning-source-file warnings))
+         (unique-files (remove-duplicates files :test 'equal)))
+    (length unique-files)))
 
 (defmacro with-warning-report ((&key (system (error "No system."))) &body body)
   `(call/warning-report
@@ -381,9 +387,10 @@ actually depending on Quicklisp."
 
 (defun after-load-message (system warning-count)
   (let ((name (system-name system)))
-    (format t "~&System ~a has been loaded with ~a warning~:p."
+    (format t "~&System ~a has been loaded with ~a warning~:p in ~a file~:p."
             name
-            warning-count)
+            warning-count
+            file-count)
     (when (> warning-count 0)
       (format t "~%To render a report, load system ~a and evaluate: ~s"
               :utopian/report
