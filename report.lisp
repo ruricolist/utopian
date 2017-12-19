@@ -329,9 +329,10 @@ no warnings or style warnings."
 
               (:p
                 (when warnings
-                  (fmt "There are ~a in ~a file~:p"
+                  (fmt "There are ~a in ~a file~:p."
                        (quantify-notes warnings)
-                       (length by-source-file))))
+                       (count-if (op (warning-source-file (car _)))
+                                 by-source-file))))
 
               (when by-source-file
                 (:h1 "By file")
