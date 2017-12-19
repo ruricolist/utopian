@@ -54,6 +54,7 @@
     "LD_LIBRARY_PATH"
     "OSTYPE"
     "HOSTTYPE"
+    "PGDATA"
     ;; Lisp-specific.
     #+sbcl "SBCL_HOME"
     #+ccl "CCL_DEFAULT_DIRECTORY"
@@ -193,7 +194,7 @@ actually depending on Quicklisp."
   (list :system-name (system-name system)
         :warnings (sort-warnings (reverse warnings))
         :lisp-env (lisp-env-info)
-        :os-env (os-env-plist)
+        :os-env (os-env-info)
         :quicklisp-dist-root (quicklisp-dist-root)
         :quicklisp-dist-cache-root (quicklisp-dist-cache-root)))
 
