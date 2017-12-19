@@ -206,7 +206,7 @@
           (equal (machine-instance)
                  (~> report
                      (getf :lisp-env)
-                     (getf :machine-instance)))
+                     (assocdr 'uiop/os:hostname _)))
 
           system-name (getf report :system-name)
 
