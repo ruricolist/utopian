@@ -324,7 +324,9 @@ actually depending on Quicklisp."
       (funcall fn))
     (let ((report (warning-collector-report collector system)))
       (setf (system-report system) report)
-      (after-load-message system (count-report-warnings report))
+      (after-load-message system
+                          (count-report-warnings report)
+                          (count-report-files report))
       (system-report-file system))))
 
 (defun count-report-warnings (report)
@@ -385,7 +387,7 @@ actually depending on Quicklisp."
                       (list system)
                           :verbose t)))
 
-(defun after-load-message (system warning-count)
+(defun after-load-message (system warning-count file-count)
   (let ((name (system-name system)))
     (format t "~&System ~a has been loaded with ~a warning~:p in ~a file~:p."
             name
