@@ -25,6 +25,8 @@
                ;; For warnings.
                "closer-mop"
                ;; For ignore regexes.
-               "cl-ppcre")
+               "cl-ppcre"
+               ;; For opening the browser.
+               "trivial-open-browser")
   :serial t
   :components ((:file "report")))

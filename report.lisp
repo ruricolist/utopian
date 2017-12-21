@@ -4,6 +4,7 @@
   (:use :cl :alexandria :serapeum :trivia :spinneret
     :utopian
     :utopian/collect)
+  (:import-from :trivial-open-browser :open-browser)
   (:shadowing-import-from :serapeum :@)
   (:export :report-html-file))
 
@@ -472,3 +473,7 @@ no warnings or style warnings."
                              :pathname p)
     (apply #'report-html report :stream s args)
     (pathname-file-url p)))
+
+(defun utopian:browse-report (report &rest args &key &allow-other-keys)
+  (open-browser
+   (apply #'report-html-file report args)))
