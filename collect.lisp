@@ -20,6 +20,52 @@
 
 ;;; "utopian" goes here. Hacks and glory await!
 
+(defparameter *lisp-env-queries*
+  '(lisp-implementation-type
+    lisp-implementation-version
+    ;; machine-instance
+    uiop/os:hostname
+    uiop/os:operating-system
+    ;; machine-type
+    architecture
+    ;; machine-version
+    short-site-name
+    long-site-name))
+
+(defparameter *environment-variables*
+  '(
+    ;; Glibc standard environment.
+    "HOME"
+    "LOGNAME"
+    "PATH"
+    "TERM"
+    "TZ"
+    "LANG"
+    "LC_ALL"
+    "LC_COLLATE"
+    "LC_CTYPE"
+    "LC_MESSAGES"
+    "LC_MONETARY"
+    "LC_NUMERIC"
+    "LC_TIME"
+    "NLSPATH"
+    "_POSIX_OPTION_ORDER"
+    ;; Etc.
+    "LD_LIBRARY_PATH"
+    "OSTYPE"
+    "HOSTTYPE"
+    "PGDATA"
+    ;; Lisp-specific.
+    #+sbcl "SBCL_HOME"
+    #+ccl "CCL_DEFAULT_DIRECTORY"
+    ))
+
+(defun architecture ()
+  (multiple-value-bind (short long)
+      (uiop/os:architecture)
+    (declare (ignore short))
+    long))
+
 (defmacro let1 (var expr &body body)
   `(let ((,var ,expr))
      ,@body))
@@ -107,24 +153,18 @@ without having to worry whether the package actually exists."
        (asdf:component-name system)
        system)))
 
-(defun lisp-env-plist ()
+(defun lisp-env-info ()
   "Gather Lisp-supplied environment info."
-  (list
-   :lisp-implementation-type (lisp-implementation-type)
-   :lisp-implementation-version (lisp-implementation-version)
-   :machine-instance (machine-instance)
-   :machine-type (machine-type)
-   :machine-version (machine-version)
-   :short-site-name (short-site-name)
-   :long-site-name (long-site-name)))
+  (loop for fn in *lisp-env-queries*
+        for val = (funcall fn)
+        unless (equal val "unspecified")
+          collect (cons fn val)))
 
-(defun os-env-plist ()
-  (list
-   :path (uiop:getenv "PATH")
-   :ld-library-path (uiop:getenv "LD_LIBRARY_PATH")
-   :ostype (uiop:getenv "OSTYPE")
-   :hosttype (uiop:getenv "HOSTTYPE")
-   :lang (uiop:getenv "LANG")))
+(defun os-env-info ()
+  (loop for var in *environment-variables*
+        for val = (uiop:getenvp var)
+        when val
+          collect (cons var val)))
 
 (defun quicklisp-dist-root ()
   "Get the directory of the Quicklisp dist, if there is one, without
@@ -153,8 +193,8 @@ actually depending on Quicklisp."
 (defun make-warning-report (system warnings)
   (list :system-name (system-name system)
         :warnings (sort-warnings (reverse warnings))
-        :lisp-env (lisp-env-plist)
-        :os-env (os-env-plist)
+        :lisp-env (lisp-env-info)
+        :os-env (os-env-info)
         :quicklisp-dist-root (quicklisp-dist-root)
         :quicklisp-dist-cache-root (quicklisp-dist-cache-root)))
 
@@ -284,11 +324,17 @@ actually depending on Quicklisp."
       (funcall fn))
     (let ((report (warning-collector-report collector system)))
       (setf (system-report system) report)
-      (after-load-message system (count-warnings report))
+      (after-load-message system (count-report-warnings report))
       (system-report-file system))))
 
-(defun count-warnings (report)
+(defun count-report-warnings (report)
   (length (getf report :warnings)))
+
+(defun count-report-files (report)
+  (let* ((warnings (getf report :warnings))
+         (files (mapcar #'warning-source-file warnings))
+         (unique-files (remove-duplicates files :test 'equal)))
+    (length unique-files)))
 
 (defmacro with-warning-report ((&key (system (error "No system."))) &body body)
   `(call/warning-report
@@ -341,9 +387,10 @@ actually depending on Quicklisp."
 
 (defun after-load-message (system warning-count)
   (let ((name (system-name system)))
-    (format t "~&System ~a has been loaded with ~a warning~:p."
+    (format t "~&System ~a has been loaded with ~a warning~:p in ~a file~:p."
             name
-            warning-count)
+            warning-count
+            file-count)
     (when (> warning-count 0)
       (format t "~%To render a report, load system ~a and evaluate: ~s"
               :utopian/report

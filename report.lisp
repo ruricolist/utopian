@@ -136,7 +136,7 @@
                                  report)
   (destructuring-bind (&key quicklisp-dist-root
                             quicklisp-dist-cache-root
-                            &allow-other-keys)
+                       &allow-other-keys)
       report
     (if (and quicklisp-dist-root
              quicklisp-dist-cache-root)
@@ -207,7 +207,7 @@
           (equal (machine-instance)
                  (~> report
                      (getf :lisp-env)
-                     (getf :machine-instance)))
+                     (assocdr 'uiop/os:hostname _)))
 
           system-name (getf report :system-name)
 
@@ -330,9 +330,10 @@ no warnings or style warnings."
 
               (:p
                 (when warnings
-                  (fmt "There are ~a in ~a file~:p"
+                  (fmt "There are ~a in ~a file~:p."
                        (quantify-notes warnings)
-                       (length by-source-file))))
+                       (count-if (op (warning-source-file (car _)))
+                                 by-source-file))))
 
               (when by-source-file
                 (:h1 "By file")
@@ -454,13 +455,13 @@ no warnings or style warnings."
         (when (or lisp-env os-env)
           (:table
             (:caption "Environment")
-            (doplist (k v lisp-env)
+            (loop for (k . v) in lisp-env do
               (when v
                 (unless (equal v "unspecified")
                   (:tr
                     (th (fmt "~@(~a~)" (substitute #\Space #\- (string k))))
                     (:td v)))))
-            (doplist (k v os-env)
+            (loop for (k . v) in os-env do
               (unless (emptyp v)
                 (:tr (th (fmt "$~:@(~a~)" k))
                   (:td :style "font-family: monospace"
