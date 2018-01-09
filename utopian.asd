@@ -1,7 +1,7 @@
 ;;;; utopian.asd
 
 (asdf:defsystem "utopian"
-  :description "Save warnings."
+  :description "Collecting warnings."
   :long-description "This is the part of Utopian that records the warnings. It has no dependencies."
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"
@@ -11,7 +11,7 @@
                (:file "collect")))
 
 (asdf:defsystem "utopian/render"
-  :description "Generate reports."
+  :description "Render reports."
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"
   :depends-on ("utopian"
