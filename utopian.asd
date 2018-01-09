@@ -29,4 +29,4 @@
                ;; For opening the browser.
                "trivial-open-browser")
   :serial t
-  :components ((:file "report")))
+  :components ((:file "render")))
