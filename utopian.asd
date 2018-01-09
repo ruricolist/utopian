@@ -10,7 +10,7 @@
   :components ((:file "package")
                (:file "collect")))
 
-(asdf:defsystem "utopian/report"
+(asdf:defsystem "utopian/render"
   :description "Generate reports."
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"

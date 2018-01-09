@@ -399,11 +399,11 @@ actually depending on Quicklisp."
             file-count)
     (when (> warning-count 0)
       (format t "~%To render a report, load system ~a and evaluate: ~s"
-              :utopian/report
+              :utopian/render
               `(generate-html-report ,name)))))
 
 (declaim (notinline generate-html-report))
 (unless (fboundp 'generate-html-report)
   (defun generate-html-report (&rest args)
     (declare (ignore args))
-    (error "The utopian/report system has not been loaded yet.")))
+    (error "The utopian/render system has not been loaded yet.")))

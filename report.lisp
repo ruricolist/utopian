@@ -1,6 +1,6 @@
 ;;;; utopian.lisp
 
-(defpackage :utopian/report
+(defpackage :utopian/render
   (:use :cl :alexandria :serapeum :trivia :spinneret
     :utopian
     :utopian/collect)
@@ -8,7 +8,7 @@
   (:shadowing-import-from :serapeum :@)
   (:export :generate-html-report))
 
-(in-package :utopian/report)
+(in-package :utopian/render)
 
 ;;; "utopian" goes here. Hacks and glory await!
 
