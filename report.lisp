@@ -68,15 +68,22 @@
        custom-css))
 
 (defun ignore-types (warnings types)
-  (remove-if (lambda (w)
-               (let ((sym
-                       (delayed-symbol->symbol
-                        (warning-class w))))
-                 ;; TODO For development.
-                 (or (subtypep sym 'uninteresting-warning)
-                     (some (op (subtypep sym _))
-                           types))))
-             warnings))
+  (let ((types
+          ;; Uninteresting warnings are supposed to be filtered out
+          ;; during collection. This is present only to simplify
+          ;; development.
+          (cons 'uninteresting-warning types)))
+    (remove-if (lambda (w)
+                 (let ((ds (warning-class w)))
+                   (let ((sym
+                           (ignoring error
+                             (delayed-symbol->symbol ds))))
+                     ;; NB `nil' is the bottom type, and a subtype of
+                     ;; everything.
+                     (and sym
+                          (some (op (subtypep sym _))
+                                types)))))
+               warnings)))
 
 (defun ignore-regex (warnings regex)
   (let ((scanner (ppcre:create-scanner regex)))

@@ -112,10 +112,14 @@ without having to worry whether the package actually exists."
    (symbol-name symbol)))
 
 (defun delayed-symbol->symbol (ds)
-  (let ((package (delayed-symbol.package ds))
-        (name (delayed-symbol.name ds)))
-    (or (find-symbol name (find-package package))
-        (error "No such symbol as ~a in ~a" name package))))
+  (let* ((package (delayed-symbol.package ds))
+         (name (delayed-symbol.name ds))
+         (package (find-package package)))
+    (if (null package)
+        (error "No such package as ~a" package)
+        (let ((sym (find-symbol name (find-package package))))
+          (if sym (values sym t)
+              (error "No such symbol as ~a in ~a" name package))))))
 
 (defun current-source-file ()
   (let ((file
