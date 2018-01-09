@@ -400,10 +400,10 @@ actually depending on Quicklisp."
     (when (> warning-count 0)
       (format t "~%To render a report, load system ~a and evaluate: ~s"
               :utopian/report
-              `(report-html-file ,name)))))
+              `(generate-html-report ,name)))))
 
-(declaim (notinline report-html-file))
-(unless (fboundp 'report-html-file)
-  (defun report-html-file (&rest args)
+(declaim (notinline generate-html-report))
+(unless (fboundp 'generate-html-report)
+  (defun generate-html-report (&rest args)
     (declare (ignore args))
     (error "The utopian/report system has not been loaded yet.")))

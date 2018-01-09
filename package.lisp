@@ -3,7 +3,7 @@
 (defpackage #:utopian
   (:use)
   (:export
-   #:report-html-file
+   #:generate-html-report
    #:browse-report
    #:write-report
    #:read-report

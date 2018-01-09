@@ -6,7 +6,7 @@
     :utopian/collect)
   (:import-from :trivial-open-browser :open-browser)
   (:shadowing-import-from :serapeum :@)
-  (:export :report-html-file))
+  (:export :generate-html-report))
 
 (in-package :utopian/report)
 
@@ -474,7 +474,7 @@ no warnings or style warnings."
                   (:td :style "font-family: monospace"
                     v))))))))))
 
-(defun utopian:report-html-file (report &rest args &key &allow-other-keys)
+(defun utopian:generate-html-report (report &rest args &key &allow-other-keys)
   (uiop:with-temporary-file (:stream s
                              :direction :output
                              :keep t
@@ -484,4 +484,4 @@ no warnings or style warnings."
 
 (defun utopian:browse-report (report &rest args &key &allow-other-keys)
   (open-browser
-   (apply #'report-html-file report args)))
+   (apply #'generate-html-report report args)))
