@@ -1,6 +1,0 @@
-;;;; utopian.lisp
-
-(in-package #:utopian)
-
-;;; "utopian" goes here. Hacks and glory await!
-
