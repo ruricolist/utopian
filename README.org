@@ -53,7 +53,7 @@ Calling ~generate-html-report~ returns the pathname of the generated report. You
   (utopian:browse-report :my-system)
 #+END_SRC
 
-This uses [[https://github.com/eudoxia0/trivial-open-browser][~trivial-open-browser~]] to open the report directly.
+This uses [[https://github.com/eudoxia0/trivial-open-browser][trivial-open-browser]] to open the report directly.
 
 **** Filtering the report
 
