@@ -478,7 +478,8 @@ no warnings or style warnings."
   (uiop:with-temporary-file (:stream s
                              :direction :output
                              :keep t
-                             :pathname p)
+                             :pathname p
+                             :type "html")
     (apply #'report-html report :stream s args)
     (pathname-file-url p)))
 
